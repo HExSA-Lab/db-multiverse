@@ -1,6 +1,6 @@
 CC:=gcc
 LDFLAGS:= 
-CFLAGS:=-O2 -Wall
+CFLAGS:=-O0 -Wall -g
 
 all: sample_op
 
