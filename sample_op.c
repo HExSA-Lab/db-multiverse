@@ -144,21 +144,49 @@ createColTable (size_t num_chunks, size_t chunk_size, size_t num_cols)
 	col_table_t * t = NEW(col_table_t);
 	t->num_chunks = num_chunks;
 	t->num_cols = num_cols;
-	t->chunks = NEWPA(table_chunk_t, num_chunks);
 	t->num_rows = t->num_chunks * chunk_size;
+	t->chunks = NEWPA(table_chunk_t, num_chunks);
+
+    if (!t->chunks) {
+        ERROR("Could not allocate chunks in %s\n", __func__);
+        return NULL;
+    }
 
 	for(int i = 0; i < num_chunks; i++)
 	{
 		table_chunk_t *tc = NEW(table_chunk_t);
+
+        if (!tc) {
+            ERROR("Could not allocate table chunk tc in %s\n", __func__);
+            return NULL;
+        }
+
 		t->chunks[i] = tc;
 		tc->columns = NEWPA(column_chunk_t, num_cols);
+
+        if (!tc->columns) {
+            ERROR("Could not allocate columns in %s\n", __func__);
+            return NULL;
+        }
 
 		for (int j = 0; j < num_cols; j++)
 		{
 			column_chunk_t *c = NEW(column_chunk_t);
+
+            if (!c) {
+                ERROR("Could not allocate c in %s\n", __func__);
+                return NULL;
+            }
+
 			tc->columns[j] = c;
 			c->chunk_size = chunk_size;
 			c->data = NEWA(val_t, chunk_size);
+
+            if (!c->data) {
+                ERROR("Could not allocate chunk data in %s\n", __func__);
+                return NULL;
+            }
+
 
 			for(int k = 0; k < chunk_size; k++)
 			{
@@ -208,7 +236,18 @@ projection(col_table_t *t, size_t *pos, size_t num_proj)
 	{
 		table_chunk_t *tc = t->chunks[i];
 		column_chunk_t **new_columns = NEWPA(column_chunk_t, num_proj);
+
+        if (!new_columns) {
+            ERROR("Could not allocate new columns in %s\n", __func__);
+            return NULL;
+        }
+
 		unsigned char *colRetained = NEWA(unsigned char, t->num_cols);
+
+        if (!colRetained) {
+            ERROR("Could not allocate colRetained in %s\n", __func__);
+            return NULL;
+        }
 
 		for(int j = 0; j < t->num_cols; j++)
 			colRetained[j] = 0;
@@ -261,13 +300,39 @@ selection_const (col_table_t *t, size_t col, val_t val)
 	r->num_chunks = 1;
 	r->chunks = NEWPA(table_chunk_t, t->num_chunks);
 
+    if (!r->chunks) {
+        ERROR("Could not allocate chunks in %s\n", __func__);
+        return NULL;
+    }
+
 	t_chunk =  NEW(table_chunk_t);
+
+    if (!t_chunk) {
+        ERROR("Could not allocate t_chunk in %s\n", __func__);
+        return NULL;
+    }
+
 	t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
+
+    if (!t_chunk->columns) {
+        ERROR("Could not allocate t_chunk->columns in %s\n", __func__);
+        return NULL;
+    }
+
 	for(int i = 0; i < t->num_cols; i++)
 	{
 		t_chunk->columns[i] = NEW(column_chunk_t);
+        if (!t_chunk->columns[i]) {
+            ERROR("Could not allocate t_chunk->columns[i] in %s\n", __func__);
+            return NULL;
+        }
 		c_chunk = t_chunk->columns[i];
 		c_chunk->data = NEWA(val_t, t->chunks[0]->columns[0]->chunk_size);
+
+        if (!c_chunk->data) {
+            ERROR("Could not allocate c_chunk->data in %s\n", __func__);
+            return NULL;
+        }
 	}
 	r->chunks[out_chunks - 1] = t_chunk;
 	size_t out_pos = 0;
@@ -307,12 +372,28 @@ selection_const (col_table_t *t, size_t col, val_t val)
 			if (out_pos == chunk_size)
 			{
 				t_chunk =  NEW(table_chunk_t);
+                if (!t_chunk) {
+                    ERROR("Could not allocate t_chunk in %s\n", __func__);
+                    return NULL;
+                }
 				t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
+                if (!t_chunk->columns) {
+                    ERROR("Could not allocate t_chunk->columns in %s\n", __func__);
+                    return NULL;
+                }
 				for(int i = 0; i < t->num_cols; i++)
 				{
 					t_chunk->columns[i] = NEW(column_chunk_t);
+                    if (!t_chunk->columns[i]) {
+                        ERROR("Could not allocate t_chunk->columns[i] in %s\n", __func__);
+                        return NULL;
+                    }
 					c_chunk = t_chunk->columns[i];
 					c_chunk->data = NEWA(val_t, chunk_size);
+                    if (!c_chunk->data) {
+                        ERROR("Could not allocate c_chunk->data in %s\n", __func__);
+                        return NULL;
+                    }
 				}
 				r->chunks[r->num_chunks] = t_chunk;
 				r->num_chunks++;
