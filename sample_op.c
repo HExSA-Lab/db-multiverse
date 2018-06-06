@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <string.h>
 #include <time.h>
 #include <sys/time.h>
 
@@ -38,8 +39,8 @@
 
 #define VERSION_STRING "0.0.1"
 
-#define DEFAULT_TRIALS   100
-#define DEFAULT_THROWOUT 10
+#define DEFAULT_TRIALS   1
+#define DEFAULT_THROWOUT 1
 #define DEFAULT_EXP_STR "scan"
 #define DEFAULT_EXP      EXP_SCAN
 
@@ -99,6 +100,26 @@ typedef struct col_table {
 	table_chunk_t ** chunks;
 } col_table_t;
 
+typedef enum operator {
+	SELECTION_CONST = 0,
+	SELECTION_ATT,
+	PROJECTION,
+	NUM_OPS
+} operator_t;
+
+typedef col_table_t* (*op_implementation_t) ();
+
+#define MAX_IMPL 5
+
+typedef struct op_implementation_info {
+	operator_t op;
+	char *names[MAX_IMPL];
+	op_implementation_t implementations[MAX_IMPL];
+	size_t num_impls;
+} op_implementation_info_t;
+
+
+
 typedef struct exp_options {
 	size_t num_chunks;
 	size_t num_cols;
@@ -106,9 +127,58 @@ typedef struct exp_options {
 	table_type_t table_type;
 	unsigned int domainsize;
 	unsigned int repetitions;
+	op_implementation_t *impls;
 } exp_options_t;
 
+// function declarations
+static exp_options_t defaultOptions (void);
+static void print_options (void);
+static void print_table_info (col_table_t *t);
+static col_table_t *createColTable (size_t num_chunks, size_t chunk_size, size_t num_cols);
+static void free_col_table (col_table_t *t);
+static col_table_t *projection(col_table_t *t, size_t *pos, size_t num_proj);
+static col_table_t *selection_const (col_table_t *t, size_t col, val_t val);
+static col_table_t *basic_rowise_selection_const (col_table_t *t, size_t col, val_t val);
+static col_table_t *scatter_gather_selection_const (col_table_t *t, size_t col, val_t val);
+static void usage (char * prog);
+static void version (void);
+static void  driver (void);
+static void set_impl_op(operator_t op, char *impl_name);
+
+// local global vars ;-)
 static exp_options_t options;
+
+// information about operator implementations
+static op_implementation_info_t impl_infos[] = {
+		{
+				SELECTION_CONST,
+				{ "row", "col", "scattergather", NULL, NULL },
+				{ basic_rowise_selection_const, selection_const, scatter_gather_selection_const, NULL, NULL },
+				3
+		},
+		{
+				SELECTION_ATT,
+				{ NULL, NULL, NULL, NULL, NULL },
+				{ NULL, NULL, NULL, NULL, NULL },
+				0
+		},
+		{
+				PROJECTION,
+				{ "inplace", NULL, NULL, NULL, NULL },
+				{ projection, NULL, NULL, NULL, NULL },
+				1
+		}
+};
+static op_implementation_t default_impls[] = {
+		basic_rowise_selection_const, // SELECTION_CONST
+		NULL, // SELECTION_ATT
+		projection // PROJECTION
+};
+static char * op_names[] = {
+		[SELECTION_CONST] = "selection_const",
+		[SELECTION_ATT] = "selection_att",
+		[PROJECTION] = "projection",
+};
 
 static exp_options_t
 defaultOptions (void)
@@ -121,6 +191,17 @@ defaultOptions (void)
 	o.table_type = COLUMN;
 	o.domainsize = 100;
 	o.repetitions = 1;
+	o.impls = default_impls;
+//	NEWA(op_implementation_t, NUM_OPS);
+//	if (! o.impls)
+//	{
+//		INFO("could not allocate memory for options");
+//		exit(1);
+//	}
+//	for(int i = 0; i < NUM_OPS; i++)
+//	{
+//		o.impls[i] = default_impls[i];
+//	}
 
 	return o;
 }
@@ -134,6 +215,21 @@ print_options (void)
     printf(" # numcols=%lu\n", options.num_cols);
     printf(" # tabletype=%u (0=columnar, 1=row)\n", options.table_type);
     printf(" # domainsize=%u\n", options.domainsize);
+    for(int i = 0; i < NUM_OPS; i++)
+    {
+    	op_implementation_info_t info = impl_infos[i];
+    	op_implementation_t impl = options.impls[i];
+    	char *impl_name = "";
+
+    	for(int j = 0; j < info.num_impls; j++)
+    	{
+    		if(impl == info.implementations[j])
+    		{
+    			impl_name = info.names[j];
+    	    	printf(" # implementation for %s is %s\n", op_names[i], impl_name);
+    		}
+    	}
+    }
 }
 
 static inline val_t
@@ -276,7 +372,7 @@ selection_const (col_table_t *t, size_t col, val_t val)
 	size_t chunk_size = t->chunks[0]->columns[0]->chunk_size;
 	size_t out_chunks = 1;
 
-	INFO("SELECTION on column %lu = %u",  col, val);
+	INFO("SELECTION[col] on column %lu = %u",  col, val);
 	printf(" over ");
 	print_table_info(t);
 
@@ -322,7 +418,7 @@ selection_const (col_table_t *t, size_t col, val_t val)
 				// tight loop with compile time constant of iterations
 				for(int j = 0; j < UNROLL_SIZE; j++)
 				{
-					uint8_t match = (*indata == val);
+					int match = (*indata == val);
 					*outdata = *indata;
 					indata++;
 					outdata += match;
@@ -357,7 +453,7 @@ selection_const (col_table_t *t, size_t col, val_t val)
 				out_pos = 0;
 			}
 
-			uint8_t match = (*indata == val);
+			int match = (*indata == val);
 			indata++;
 
 			if (match)
@@ -396,7 +492,7 @@ basic_rowise_selection_const (col_table_t *t, size_t col, val_t val)
 	size_t chunk_size = t->chunks[0]->columns[0]->chunk_size;
 	size_t out_chunks = 1;
 
-	INFO("SELECTION on column %lu = %u",  col, val);
+	INFO("SELECTION[rowwise] on column %lu = %u",  col, val);
 	printf(" over ");
 	print_table_info(t);
 
@@ -483,11 +579,22 @@ basic_rowise_selection_const (col_table_t *t, size_t col, val_t val)
     return r;
 }
 
+static inline column_chunk_t *
+createColChunk(size_t chunksize)
+{
+	column_chunk_t *result = NEW(column_chunk_t);
+	MALLOC_CHECK_NO_MES(result);
+
+	result->chunk_size = chunksize;
+	result->data = NEWA(val_t, chunksize);
+	MALLOC_CHECK_NO_MES(result->data);
+
+	return result;
+}
+
 static col_table_t *
 scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
 {
-	col_table_t *r = NEW(col_table_t);
-	column_chunk_t *c_chunk;
 	table_chunk_t *t_chunk;
 	size_t total_results = 0;
 	size_t chunk_size = t->chunks[0]->columns[0]->chunk_size;
@@ -495,91 +602,103 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
 	column_chunk_t **idx;
 	column_chunk_t **cidx;
 
-	INFO("SELECTION on column %lu = %u",  col, val);
+	INFO("SELECTION[scatter-gather] on column %lu = %u",  col, val);
 	printf(" over ");
 	print_table_info(t);
 
-	r->num_cols = t->num_cols;
-	r->num_chunks = 1;
-	r->chunks = NEWPA(table_chunk_t, t->num_chunks);
-	MALLOC_CHECK_NO_MES(r->chunks);
-
-	t_chunk =  NEW(table_chunk_t);
-	MALLOC_CHECK_NO_MES(t_chunk);
-
-	t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
-	MALLOC_CHECK_NO_MES(t_chunk->columns);
-
-	for(int i = 0; i < t->num_cols; i++)
-	{
-		t_chunk->columns[i] = NEW(column_chunk_t);
-		MALLOC_CHECK_NO_MES(t_chunk->columns[i]);
-		c_chunk = t_chunk->columns[i];
-		c_chunk->data = NEWA(val_t, chunk_size);
-		MALLOC_CHECK_NO_MES(c_chunk->data);
-	}
-	r->chunks[out_chunks - 1] = t_chunk;
-
 	// create index columns
-
-	// gather based on index column one column at a time
+	//TODO introduce better data type to represent offsets (currently column chunk is one fixed large integer type)
+	idx = NEWPA(column_chunk_t, t->num_chunks);
+	MALLOC_CHECK_NO_MES(idx);
+	cidx = NEWPA(column_chunk_t, t->num_chunks);
+	MALLOC_CHECK_NO_MES(cidx);
 	for(int i = 0; i < t->num_chunks; i++)
 	{
-
+		idx[i] = createColChunk(chunk_size);
+		cidx[i] = createColChunk(chunk_size);
 	}
+
+	// scatter based on condition
+	unsigned int outpos = 0;
+	unsigned int outchunk = 0;
+	val_t *idx_c = idx[0]->data;
+	val_t *cidx_c = cidx[0]->data;
 
 	for(int i = 0; i < t->num_chunks; i++)
 	{
 		table_chunk_t *tc = t->chunks[i];
 		column_chunk_t *c = tc->columns[col];
-		val_t *outdata;
 		val_t *indata = c->data;
-		val_t *instart = indata;
 
-		while(indata < instart + chunk_size)
+		for(int j = 0; j < chunk_size; j++)
 		{
-			if (out_pos == chunk_size)
-			{
-				t_chunk =  NEW(table_chunk_t);
-				MALLOC_CHECK_NO_MES(t_chunk);
+			int match = (*indata++ == val);
+			idx_c[outpos] = j;
+	        cidx_c[outpos] = i;
+	        outpos += match;
 
-				t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
-				MALLOC_CHECK_NO_MES(t_chunk->columns);
-
-				for(int i = 0; i < t->num_cols; i++)
-				{
-					t_chunk->columns[i] = NEW(column_chunk_t);
-					MALLOC_CHECK_NO_MES(t_chunk->columns[i]);
-
-					c_chunk = t_chunk->columns[i];
-					c_chunk->data = NEWA(val_t, chunk_size);
-					MALLOC_CHECK_NO_MES(c_chunk->data);
-				}
-				r->chunks[r->num_chunks] = t_chunk;
-				r->num_chunks++;
-				out_pos = 0;
-			}
-
-			uint8_t match = (*indata == val);
-			indata++;
-
-			if (match)
-			{
-				total_results++;
-				for(int j = 0; j < t->num_cols; j++)
-				{
-					outdata = t_chunk->columns[j]->data + out_pos;
-					*outdata = *indata;
-					outdata += match;
-				}
-				out_pos++;
-			}
-
+	        if (outpos == chunk_size)
+	        {
+	        	outpos = 0;
+	        	outchunk++;
+	        	idx_c = idx[outchunk]->data;
+	        	cidx_c = cidx[outchunk]->data;
+	        	total_results += chunk_size;
+	        }
 		}
+	}
+	total_results += outpos;
 
+	// fill remainder with [0,0] to simplify processing
+	while(++outpos < chunk_size)
+	{
+		idx_c[outpos] = 0;
+		cidx_c[outpos] = 0;
 	}
 
+	// create output table
+	out_chunks = total_results / chunk_size + (total_results % chunk_size == 0 ? 0 : 1);
+
+	col_table_t *r = NEW(col_table_t);
+	MALLOC_CHECK_NO_MES(r);
+	r->num_cols = t->num_cols;
 	r->num_rows = total_results;
+	r->num_chunks = out_chunks;
+	r->chunks = NEWPA(table_chunk_t, out_chunks);
+	MALLOC_CHECK_NO_MES(r->chunks);
+
+	for(int i = 0; i < out_chunks; i++)
+	{
+		t_chunk =  NEW(table_chunk_t);
+		MALLOC_CHECK_NO_MES(t_chunk);
+
+		t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
+		MALLOC_CHECK_NO_MES(t_chunk->columns);
+
+		for(int i = 0; i < t->num_cols; i++)
+		{
+			t_chunk->columns[i] = createColChunk(chunk_size);
+		}
+		r->chunks[i] = t_chunk;
+	}
+
+	// gather based on index column one column at a time
+	for(int i = 0; i < t->num_cols; i++)
+	{
+		for(int j = 0; j < out_chunks; j++)
+		{
+			val_t *outdata = r->chunks[j]->columns[i]->data;
+			val_t *idx_c = idx[j]->data;
+			val_t *cidx_c = cidx[j]->data;
+
+			for(int k = 0; k < chunk_size; k++)
+			{
+				outdata[k] = t->chunks[cidx_c[k]]->columns[i]->data[idx_c[k]];
+			}
+		}
+	}
+
+	//TODO free
 
 	INFO(" => output table: ");
 	print_table_info(r);
@@ -604,6 +723,7 @@ usage (char * prog)
     printf("  -c, --numcols : number of columns in the table (default=%lu)\n", defaultOptions().num_cols);
     printf("  -y, --tabletype : type of table to be used (0=columnar, 1=row) (default=%u)\n", defaultOptions().table_type);
     printf("  -d, --domainsize : a table's attribute values are sampled uniform random from [0, domainsize -1] (default=%u)\n", defaultOptions().domainsize);
+    printf("  -i, --implementations : a list of key=value pairs selecting operator implementations\n");
 
     printf("\nExperiments (default=%s):\n", "scan");
     printf("  --scan\n");
@@ -641,9 +761,8 @@ driver (void)
 
 	col_table_t *table = createColTable(options.num_chunks, options.chunksize, options.num_cols);
 	INFO("created input table(s)\n");
-	table = projection(table, proj, 4);
-//	table = basic_rowise_selection_const(table, 1, 15);
-	table = selection_const(table, 1, 15);
+	table = options.impls[PROJECTION](table, proj, 4);
+	table = options.impls[SELECTION_CONST](table, 1, 1);
 	free_col_table(table);
 }
 
@@ -653,6 +772,31 @@ typedef enum exp_id {
     EXP_SCAN,
 } exp_id_t;
 
+static void
+set_impl_op(operator_t op, char *impl_name)
+{
+	op_implementation_t op_impl = NULL;
+	op_implementation_info_t info;
+
+	INFO("select \"%s\" operator implementation \"%s\"\n", op_names[op], impl_name ? impl_name : "NULL");
+	info = impl_infos[op];
+
+	for(int i = 0; i < info.num_impls; i++)
+	{
+		if(strcmp(info.names[i], impl_name) == 0)
+		{
+			op_impl = info.implementations[i];
+			options.impls[op] = op_impl;
+		}
+	}
+
+	if (op_impl == NULL)
+	{
+		INFO("did not find implementation for operator \"%s\" named \"%s\"\n", op_names[op], impl_name);
+		exit(1);
+	}
+}
+
 
 int
 main (int argc, char ** argv){
@@ -661,6 +805,8 @@ main (int argc, char ** argv){
 	char * exp_str    = DEFAULT_EXP_STR;
 	int exp_id        = DEFAULT_EXP;
 	time_int * runtimes;
+	char *subopts;
+	char *subvalue;
 	
 	options = defaultOptions();
 	srand(time(NULL));
@@ -680,10 +826,20 @@ main (int argc, char ** argv){
 			{"numcols", required_argument, 0, 'c'},
 			{"tabletype", required_argument, 0, 'y'},
 			{"domainsize", required_argument, 0, 'd'},
+			{"implementations", required_argument, 0, 'i'},
             {0, 0, 0, 0}
         };
 
-        c = getopt_long(argc, argv, "t:k:shvu:n:c:y:d:", lopts, &optidx);
+        static const char *impl_opts[] =
+        {
+            [SELECTION_CONST] = "sel_const",
+            [SELECTION_ATT] = "sel_att",
+            [PROJECTION] = "projection",
+            NULL
+        };
+
+
+        c = getopt_long(argc, argv, "t:k:shvu:n:c:y:d:i:", lopts, &optidx);
 
         if (c == -1) {
             break;
@@ -723,6 +879,26 @@ main (int argc, char ** argv){
             case 'd':
             	options.domainsize = (unsigned int) atoi(optarg);
             	break;
+            case 'i':
+            	subopts = optarg;
+				while (*subopts != '\0')
+				{
+					char *saved = subopts;
+					int subo = getsubopt(&subopts, (char **)impl_opts, &subvalue);
+					switch(subo)
+					{
+						case SELECTION_CONST:
+						case SELECTION_ATT:
+						case PROJECTION:
+							set_impl_op(subo, subvalue);
+							break;
+						default:
+							/* Unknown suboption. */
+							printf("Unknown operator implementation option \"%s\"\n", saved);
+							exit(1);
+					}
+				}
+				break;
             default:
                 printf("?? getopt returned character code 0%o ??\n", c);
         }
@@ -753,4 +929,5 @@ main (int argc, char ** argv){
     printf("]\n\n");
     return 0;
 }
+
 

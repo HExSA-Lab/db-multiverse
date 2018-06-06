@@ -1,6 +1,7 @@
 CC:=gcc
-LDFLAGS:= 
-CFLAGS:=-O3 -Wall -g -msse2 -ffast-math
+LDFLAGS:=
+CFLAGS:=-O0 -Wall -g
+#CFLAGS:=-O3 -Wall -g -msse2 -ffast-math
 # -funroll-loops 
 
 all: sample_op
