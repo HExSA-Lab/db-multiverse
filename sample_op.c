@@ -40,7 +40,7 @@
 #define VERSION_STRING "0.0.1"
 
 #define DEFAULT_TRIALS   1
-#define DEFAULT_THROWOUT 1
+#define DEFAULT_THROWOUT 0
 #define DEFAULT_EXP_STR "scan"
 #define DEFAULT_EXP      EXP_SCAN
 
@@ -109,6 +109,17 @@ typedef enum operator {
 
 typedef col_table_t* (*op_implementation_t) ();
 
+typedef unsigned long time_int;
+
+#define TIMEIT(mes,code) \
+	do { \
+		time_int _tstart = my_gettime(); \
+		code; \
+		time_int _tend = my_gettime(); \
+		time_int _res = _tend - _tstart; \
+		printf("\t\ttimed: %s is <%f> sec\n", (mes), ((double) _res) / 1000000); \
+	} while(0)
+
 #define MAX_IMPL 5
 
 typedef struct op_implementation_info {
@@ -142,8 +153,20 @@ static col_table_t *basic_rowise_selection_const (col_table_t *t, size_t col, va
 static col_table_t *scatter_gather_selection_const (col_table_t *t, size_t col, val_t val);
 static void usage (char * prog);
 static void version (void);
-static void  driver (void);
+static long driver (void);
 static void set_impl_op(operator_t op, char *impl_name);
+
+static inline unsigned long
+my_gettime (void)
+{
+	struct timeval st;
+	unsigned long result;
+
+	gettimeofday(&st, NULL);
+	result = 1000000 * st.tv_sec + st.tv_usec;
+
+	return result;
+}
 
 // local global vars ;-)
 static exp_options_t options;
@@ -251,40 +274,49 @@ createColTable (size_t num_chunks, size_t chunk_size, size_t num_cols)
 	t->num_chunks = num_chunks;
 	t->num_cols = num_cols;
 	t->num_rows = t->num_chunks * chunk_size;
-	t->chunks = NEWPA(table_chunk_t, num_chunks);
 
+	t->chunks = NEWPA(table_chunk_t, num_chunks);
 	MALLOC_CHECK_NO_MES(t->chunks);
 
-	for(int i = 0; i < num_chunks; i++)
-	{
-		table_chunk_t *tc = NEW(table_chunk_t);
-		MALLOC_CHECK(tc, "table chunks");
-
-		t->chunks[i] = tc;
-		tc->columns = NEWPA(column_chunk_t, num_cols);
-		MALLOC_CHECK_NO_MES(tc->columns);
-
-		for (int j = 0; j < num_cols; j++)
+	TIMEIT("create col table",
+		for(int i = 0; i < num_chunks; i++)
 		{
-			column_chunk_t *c = NEW(column_chunk_t);
-			MALLOC_CHECK(c, "column chunks");
+			table_chunk_t *tc = NEW(table_chunk_t);
+			MALLOC_CHECK(tc, "table chunks");
 
-			tc->columns[j] = c;
-			c->chunk_size = chunk_size;
-			c->data = NEWA(val_t, chunk_size);
-			MALLOC_CHECK(c->data, "chunk data");
+			t->chunks[i] = tc;
+			tc->columns = NEWPA(column_chunk_t, num_cols);
+			MALLOC_CHECK_NO_MES(tc->columns);
 
-			for(int k = 0; k < chunk_size; k++)
+			for (int j = 0; j < num_cols; j++)
 			{
-				c->data[k] = randVal();
+				column_chunk_t *c = NEW(column_chunk_t);
+				MALLOC_CHECK(c, "column chunks");
+
+				tc->columns[j] = c;
+				c->chunk_size = chunk_size;
+				c->data = NEWA(val_t, chunk_size);
+				MALLOC_CHECK(c->data, "chunk data");
+
+				for(int k = 0; k < chunk_size; k++)
+				{
+					c->data[k] = randVal();
+				}
 			}
 		}
-	}
+	);
 
 	INFO("created table: ");
 	print_table_info(t);
 
 	return t;
+}
+
+static inline void
+free_col_chunk (column_chunk_t *c)
+{
+	free(c->data);
+	free(c);
 }
 
 static void
@@ -296,8 +328,7 @@ free_col_table (col_table_t *t)
 		for (int j = 0; j < t->num_cols; j++)
 		{
 			column_chunk_t *c = tc->columns[j];
-			free(c->data);
-			free(c);
+			free_col_chunk(c);
 		}
 		free(tc);
 	}
@@ -305,6 +336,8 @@ free_col_table (col_table_t *t)
 	free(t->chunks);
 	free(t);
 }
+
+
 
 // projection only changes the schema
 static col_table_t *
@@ -318,41 +351,42 @@ projection(col_table_t *t, size_t *pos, size_t num_proj)
 	printf("over ");
 	print_table_info(t);
 
-	for(int i = 0; i < t->num_chunks; i++)
-	{
-		table_chunk_t *tc = t->chunks[i];
-		column_chunk_t **new_columns = NEWPA(column_chunk_t, num_proj);
-
-		MALLOC_CHECK_NO_MES(new_columns);
-
-		unsigned char *colRetained = NEWA(unsigned char, t->num_cols);
-
-		MALLOC_CHECK_NO_MES(colRetained);
-
-		for(int j = 0; j < t->num_cols; j++)
-			colRetained[j] = 0;
-
-		for(int j = 0; j < num_proj; j++)
+	TIMEIT("main loop",
+		for(int i = 0; i < t->num_chunks; i++)
 		{
-			new_columns[j] = tc->columns[pos[j]];
-			colRetained[pos[j]] = 1;
-		}
+			table_chunk_t *tc = t->chunks[i];
+			column_chunk_t **new_columns = NEWPA(column_chunk_t, num_proj);
 
-		for(int j = 0; j < t->num_cols; j++)
-		{
-			if(colRetained[j] == 0)
+			MALLOC_CHECK_NO_MES(new_columns);
+
+			unsigned char *colRetained = NEWA(unsigned char, t->num_cols);
+
+			MALLOC_CHECK_NO_MES(colRetained);
+
+			for(int j = 0; j < t->num_cols; j++)
+				colRetained[j] = 0;
+
+			for(int j = 0; j < num_proj; j++)
 			{
-				column_chunk_t *c = tc->columns[j];
-				free(c->data);
-				free(c);
+				new_columns[j] = tc->columns[pos[j]];
+				colRetained[pos[j]] = 1;
 			}
+
+			for(int j = 0; j < t->num_cols; j++)
+			{
+				if(colRetained[j] == 0)
+				{
+					column_chunk_t *c = tc->columns[j];
+					free(c->data);
+					free(c);
+				}
+			}
+
+			free(tc->columns);
+			tc->columns = new_columns;
 		}
-
-		free(tc->columns);
-		tc->columns = new_columns;
-	}
-	t->num_cols = num_proj;
-
+		t->num_cols = num_proj;
+	);
 
 	INFO(" => output table: ");
 	print_table_info(t);
@@ -518,56 +552,58 @@ basic_rowise_selection_const (col_table_t *t, size_t col, val_t val)
 	r->chunks[out_chunks - 1] = t_chunk;
 	size_t out_pos = 0;
 
-	for(int i = 0; i < t->num_chunks; i++)
-	{
-		table_chunk_t *tc = t->chunks[i];
-		column_chunk_t *c = tc->columns[col];
-		val_t *outdata;
-		val_t *indata = c->data;
-		val_t *instart = indata;
-
-		while(indata < instart + chunk_size)
+	TIMEIT("main loop",
+		for(int i = 0; i < t->num_chunks; i++)
 		{
-			if (out_pos == chunk_size)
+			table_chunk_t *tc = t->chunks[i];
+			column_chunk_t *c = tc->columns[col];
+			val_t *outdata;
+			val_t *indata = c->data;
+			val_t *instart = indata;
+
+			while(indata < instart + chunk_size)
 			{
-				t_chunk =  NEW(table_chunk_t);
-				MALLOC_CHECK_NO_MES(t_chunk);
-
-				t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
-				MALLOC_CHECK_NO_MES(t_chunk->columns);
-
-				for(int i = 0; i < t->num_cols; i++)
+				if (out_pos == chunk_size)
 				{
-					t_chunk->columns[i] = NEW(column_chunk_t);
-					MALLOC_CHECK_NO_MES(t_chunk->columns[i]);
+					t_chunk =  NEW(table_chunk_t);
+					MALLOC_CHECK_NO_MES(t_chunk);
 
-					c_chunk = t_chunk->columns[i];
-					c_chunk->data = NEWA(val_t, chunk_size);
-					MALLOC_CHECK_NO_MES(c_chunk->data);
+					t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
+					MALLOC_CHECK_NO_MES(t_chunk->columns);
+
+					for(int i = 0; i < t->num_cols; i++)
+					{
+						t_chunk->columns[i] = NEW(column_chunk_t);
+						MALLOC_CHECK_NO_MES(t_chunk->columns[i]);
+
+						c_chunk = t_chunk->columns[i];
+						c_chunk->data = NEWA(val_t, chunk_size);
+						MALLOC_CHECK_NO_MES(c_chunk->data);
+					}
+					r->chunks[r->num_chunks] = t_chunk;
+					r->num_chunks++;
+					out_pos = 0;
 				}
-				r->chunks[r->num_chunks] = t_chunk;
-				r->num_chunks++;
-				out_pos = 0;
-			}
 
-			uint8_t match = (*indata == val);
-			indata++;
+				uint8_t match = (*indata == val);
+				indata++;
 
-			if (match)
-			{
-				total_results++;
-				for(int j = 0; j < t->num_cols; j++)
+				if (match)
 				{
-					outdata = t_chunk->columns[j]->data + out_pos;
-					*outdata = *indata;
-					outdata += match;
+					total_results++;
+					for(int j = 0; j < t->num_cols; j++)
+					{
+						outdata = t_chunk->columns[j]->data + out_pos;
+						*outdata = *indata;
+						outdata += match;
+					}
+					out_pos++;
 				}
-				out_pos++;
+
 			}
 
 		}
-
-	}
+	);
 
 	r->num_rows = total_results;
 
@@ -608,53 +644,57 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
 
 	// create index columns
 	//TODO introduce better data type to represent offsets (currently column chunk is one fixed large integer type)
-	idx = NEWPA(column_chunk_t, t->num_chunks);
-	MALLOC_CHECK_NO_MES(idx);
-	cidx = NEWPA(column_chunk_t, t->num_chunks);
-	MALLOC_CHECK_NO_MES(cidx);
-	for(int i = 0; i < t->num_chunks; i++)
-	{
-		idx[i] = createColChunk(chunk_size);
-		cidx[i] = createColChunk(chunk_size);
-	}
+	TIMEIT("index creation",
+		idx = NEWPA(column_chunk_t, t->num_chunks);
+		MALLOC_CHECK_NO_MES(idx);
+		cidx = NEWPA(column_chunk_t, t->num_chunks);
+		MALLOC_CHECK_NO_MES(cidx);
+		for(int i = 0; i < t->num_chunks; i++)
+		{
+			idx[i] = createColChunk(chunk_size);
+			cidx[i] = createColChunk(chunk_size);
+		}
+	);
 
 	// scatter based on condition
-	unsigned int outpos = 0;
-	unsigned int outchunk = 0;
-	val_t *idx_c = idx[0]->data;
-	val_t *cidx_c = cidx[0]->data;
+	TIMEIT("scatter",
+		unsigned int outpos = 0;
+		unsigned int outchunk = 0;
+		val_t *idx_c = idx[0]->data;
+		val_t *cidx_c = cidx[0]->data;
 
-	for(int i = 0; i < t->num_chunks; i++)
-	{
-		table_chunk_t *tc = t->chunks[i];
-		column_chunk_t *c = tc->columns[col];
-		val_t *indata = c->data;
-
-		for(int j = 0; j < chunk_size; j++)
+		for(int i = 0; i < t->num_chunks; i++)
 		{
-			int match = (*indata++ == val);
-			idx_c[outpos] = j;
-	        cidx_c[outpos] = i;
-	        outpos += match;
+			table_chunk_t *tc = t->chunks[i];
+			column_chunk_t *c = tc->columns[col];
+			val_t *indata = c->data;
 
-	        if (outpos == chunk_size)
-	        {
-	        	outpos = 0;
-	        	outchunk++;
-	        	idx_c = idx[outchunk]->data;
-	        	cidx_c = cidx[outchunk]->data;
-	        	total_results += chunk_size;
-	        }
+			for(int j = 0; j < chunk_size; j++)
+			{
+				int match = (*indata++ == val);
+				idx_c[outpos] = j;
+				cidx_c[outpos] = i;
+				outpos += match;
+
+				if (outpos == chunk_size)
+				{
+					outpos = 0;
+					outchunk++;
+					idx_c = idx[outchunk]->data;
+					cidx_c = cidx[outchunk]->data;
+					total_results += chunk_size;
+				}
+			}
 		}
-	}
-	total_results += outpos;
+		total_results += outpos;
 
-	// fill remainder with [0,0] to simplify processing
-	while(++outpos < chunk_size)
-	{
-		idx_c[outpos] = 0;
-		cidx_c[outpos] = 0;
-	}
+		// fill remainder with [0,0] to simplify processing
+		while(++outpos < chunk_size)
+		{
+			idx_c[outpos] = 0;
+			cidx_c[outpos] = 0;
+		}
+	);
 
 	// create output table
 	out_chunks = total_results / chunk_size + (total_results % chunk_size == 0 ? 0 : 1);
@@ -667,38 +707,50 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
 	r->chunks = NEWPA(table_chunk_t, out_chunks);
 	MALLOC_CHECK_NO_MES(r->chunks);
 
-	for(int i = 0; i < out_chunks; i++)
-	{
-		t_chunk =  NEW(table_chunk_t);
-		MALLOC_CHECK_NO_MES(t_chunk);
-
-		t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
-		MALLOC_CHECK_NO_MES(t_chunk->columns);
-
-		for(int i = 0; i < t->num_cols; i++)
+	TIMEIT("malloc output table",
+		for(int i = 0; i < out_chunks; i++)
 		{
-			t_chunk->columns[i] = createColChunk(chunk_size);
+			t_chunk =  NEW(table_chunk_t);
+			MALLOC_CHECK_NO_MES(t_chunk);
+
+			t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
+			MALLOC_CHECK_NO_MES(t_chunk->columns);
+
+			for(int i = 0; i < t->num_cols; i++)
+			{
+				t_chunk->columns[i] = createColChunk(chunk_size);
+			}
+			r->chunks[i] = t_chunk;
 		}
-		r->chunks[i] = t_chunk;
-	}
+	);
 
 	// gather based on index column one column at a time
-	for(int i = 0; i < t->num_cols; i++)
-	{
+	TIMEIT("gather",
 		for(int j = 0; j < out_chunks; j++)
 		{
-			val_t *outdata = r->chunks[j]->columns[i]->data;
 			val_t *idx_c = idx[j]->data;
 			val_t *cidx_c = cidx[j]->data;
 
-			for(int k = 0; k < chunk_size; k++)
+			for(int i = 0; i < t->num_cols; i++)
 			{
-				outdata[k] = t->chunks[cidx_c[k]]->columns[i]->data[idx_c[k]];
+				val_t *outdata = r->chunks[j]->columns[i]->data;
+				for(int k = 0; k < chunk_size; k++)
+				{
+					outdata[k] = t->chunks[cidx_c[k]]->columns[i]->data[idx_c[k]];
+				}
 			}
 		}
-	}
+	);
 
-	//TODO free
+	TIMEIT("free",
+		for(int i = 0; i < out_chunks; i++)
+		{
+			free_col_chunk(idx[i]);
+			free_col_chunk(cidx[i]);
+		}
+		free(idx);
+		free(cidx);
+	);
 
 	INFO(" => output table: ");
 	print_table_info(r);
@@ -739,31 +791,26 @@ version (void)
     printf("version %s\n\n", VERSION_STRING);
 }
 
-typedef unsigned long time_int;
-
-static inline unsigned long
-my_gettime (void)
-{
-	struct timeval st;
-	unsigned long result;
-
-	gettimeofday(&st, NULL);
-	result = 1000000 * st.tv_sec + st.tv_usec;
-
-	return result;
-}
 
 
-static void 
+
+
+
+static long
 driver (void)
 {
 	size_t proj[] = { 0, 1, 2, 3 };
-
 	col_table_t *table = createColTable(options.num_chunks, options.chunksize, options.num_cols);
 	INFO("created input table(s)\n");
+
+	time_int start = my_gettime();
 	table = options.impls[PROJECTION](table, proj, 4);
 	table = options.impls[SELECTION_CONST](table, 1, 1);
+	time_int stop = my_gettime();
+
 	free_col_table(table);
+
+	return stop - start;
 }
 
 
@@ -915,14 +962,11 @@ main (int argc, char ** argv){
     
     for(int i = 0; i < options.repetitions; i++)
     {
-    	time_int start = my_gettime();
-    	driver();
-    	time_int stop = my_gettime();
-    	runtimes[i] = stop - start;
+    	runtimes[i] = driver();
     }
 
     printf("\n\nRUNTIMES (sec): [");
-    for(int i = 0; i < options.repetitions; i++)
+    for(int i = throwout; i < options.repetitions; i++)
     {
     	printf("%f%s", ((double) runtimes[i]) / 1000000, (i < options.repetitions - 1) ? ", ":  "");
     }
