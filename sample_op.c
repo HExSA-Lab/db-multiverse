@@ -18,6 +18,8 @@
  * SOFTWARE.
  * 
  * Copyright (c) 2018, Kyle C. Hale <khale@cs.iit.edu>
+ *                     Boris Glavic <bglavic@iit.edu>
+ *
  * 
  * This is an incredibly dumb scan of a table using some filter function. No
  * column indeces are involved. This is purely for experimentation purposes.
@@ -31,32 +33,10 @@
 #include <getopt.h>
 #include <string.h>
 #include <time.h>
-#include <sys/time.h>
 
-#define INFO(fmt, args...)  printf("DB-MV: " fmt, ##args)
-#define DEBUG(fmt, args...) fprintf(stderr, "DB-MB DBG: " fmt, ##args)
-#define ERROR(fmt, args...) fprintf(stderr, "DB-MB ERR: " fmt, ##args)
+#include <common.h>
+#include <timing.h>
 
-#define VERSION_STRING "0.0.1"
-
-#define DEFAULT_TRIALS   1
-#define DEFAULT_THROWOUT 0
-#define DEFAULT_EXP_STR "scan"
-#define DEFAULT_EXP      EXP_SCAN
-
-#define NEW(typ) ((typ *) malloc(sizeof(typ)))
-#define NEWA(typ,size) ((typ *) malloc(sizeof(typ) * size))
-#define NEWPA(typ,size) ((typ **) malloc(sizeof(typ*) * size))
-
-#define MALLOC_CHECK(pointer,mes) \
-	do { \
-		if (!(pointer)) { \
-			ERROR("Could not allocate " #pointer  " (%s) in %s:%u\n", mes, __FUNCTION__, __LINE__); \
-        	return NULL; \
-		} \
-	} while(0)
-
-#define MALLOC_CHECK_NO_MES(pointer) MALLOC_CHECK(pointer,"")
 
 typedef enum table_type
 {
@@ -107,18 +87,9 @@ typedef enum operator {
 	NUM_OPS
 } operator_t;
 
+
 typedef col_table_t* (*op_implementation_t) ();
 
-typedef unsigned long time_int;
-
-#define TIMEIT(mes,code) \
-	do { \
-		time_int _tstart = my_gettime(); \
-		code; \
-		time_int _tend = my_gettime(); \
-		time_int _res = _tend - _tstart; \
-		printf("\t\ttimed: %s is <%f> sec\n", (mes), ((double) _res) / 1000000); \
-	} while(0)
 
 #define MAX_IMPL 5
 
@@ -139,7 +110,21 @@ typedef struct exp_options {
 	unsigned int domainsize;
 	unsigned int repetitions;
 	op_implementation_t *impls;
+
+    cntr_type_t cntr_type;
+    void * cntr_arg;
+
 } exp_options_t;
+
+
+static const char * cntr_opts[] = 
+{ 
+    [COUNTER_TYPE_GTOD] = "gettimeofday",
+    [COUNTER_TYPE_CGT]  = "clock_gettime",
+    [COUNTER_TYPE_PERF] = "perf-counter",
+    NULL
+};
+
 
 // function declarations
 static exp_options_t defaultOptions (void);
@@ -153,20 +138,9 @@ static col_table_t *basic_rowise_selection_const (col_table_t *t, size_t col, va
 static col_table_t *scatter_gather_selection_const (col_table_t *t, size_t col, val_t val);
 static void usage (char * prog);
 static void version (void);
-static long driver (void);
+static uint64_t driver (void);
 static void set_impl_op(operator_t op, char *impl_name);
 
-static inline unsigned long
-my_gettime (void)
-{
-	struct timeval st;
-	unsigned long result;
-
-	gettimeofday(&st, NULL);
-	result = 1000000 * st.tv_sec + st.tv_usec;
-
-	return result;
-}
 
 // local global vars ;-)
 static exp_options_t options;
@@ -192,16 +166,20 @@ static op_implementation_info_t impl_infos[] = {
 				1
 		}
 };
+
 static op_implementation_t default_impls[] = {
 		basic_rowise_selection_const, // SELECTION_CONST
 		NULL, // SELECTION_ATT
 		projection // PROJECTION
 };
-static char * op_names[] = {
+
+static const char * op_names[] = {
 		[SELECTION_CONST] = "selection_const",
 		[SELECTION_ATT] = "selection_att",
 		[PROJECTION] = "projection",
 };
+
+
 
 static exp_options_t
 defaultOptions (void)
@@ -215,6 +193,8 @@ defaultOptions (void)
 	o.domainsize = 100;
 	o.repetitions = 1;
 	o.impls = default_impls;
+    o.cntr_type = COUNTER_TYPE_GTOD;
+    o.cntr_arg  = NULL;
 //	NEWA(op_implementation_t, NUM_OPS);
 //	if (! o.impls)
 //	{
@@ -232,6 +212,11 @@ defaultOptions (void)
 static void
 print_options (void)
 {
+    INFO("# Clocksource = %s\n", cntr_opts[options.cntr_type]);
+    if (options.cntr_type == COUNTER_TYPE_PERF) {
+        perf_arg_t * arg = (perf_arg_t*)options.cntr_arg;
+        INFO("#   perf event: %s\n", arg->name);
+    }
 	printf(" # repetitions=%u\n", options.repetitions);
     printf(" # numchunks=%lu\n", options.num_chunks);
     printf(" # chunksize=%lu\n", options.chunksize);
@@ -254,6 +239,7 @@ print_options (void)
     	}
     }
 }
+
 
 static inline val_t
 randVal(void)
@@ -776,6 +762,17 @@ usage (char * prog)
     printf("  -y, --tabletype : type of table to be used (0=columnar, 1=row) (default=%u)\n", defaultOptions().table_type);
     printf("  -d, --domainsize : a table's attribute values are sampled uniform random from [0, domainsize -1] (default=%u)\n", defaultOptions().domainsize);
     printf("  -i, --implementations : a list of key=value pairs selecting operator implementations\n");
+    printf("  -l, --counter : counter type (gettimeofday, clock_gettime, or perf-counter, default=%s)\n", cntr_opts[defaultOptions().cntr_type]);
+    printf("              Supported perf events (default is cpu-cycles):\n");
+    printf("                  ctx-switches\n");
+    printf("                  page-faults\n");
+    printf("                  cpu-cycles\n");
+    printf("                  retired-instrs\n");
+    printf("                  branch-misses\n");
+    printf("                  migrations\n");
+    printf("                  cache-misses\n");
+    printf("                  dtlb-load-misses\n");
+    printf("                  itlb-load-misses\n");
 
     printf("\nExperiments (default=%s):\n", "scan");
     printf("  --scan\n");
@@ -787,37 +784,77 @@ usage (char * prog)
 static void
 version (void)
 {
-    printf("simple operator experiment (table scan):\n");
+    printf("simple operator experiment:\n");
     printf("version %s\n\n", VERSION_STRING);
 }
 
 
-
-
-
-
-static long
+static uint64_t
 driver (void)
 {
 	size_t proj[] = { 0, 1, 2, 3 };
+
+    counter_start();
 	col_table_t *table = createColTable(options.num_chunks, options.chunksize, options.num_cols);
 	INFO("created input table(s)\n");
+    counter_stop();
+    counter_reset();
 
-	time_int start = my_gettime();
+    counter_start();
+
 	table = options.impls[PROJECTION](table, proj, 4);
 	table = options.impls[SELECTION_CONST](table, 1, 1);
-	time_int stop = my_gettime();
+
+    counter_stop();
 
 	free_col_table(table);
 
-	return stop - start;
+    return counter_get();
 }
 
 
+static const char *perf_types[] = 
+{
+    [PERF_CTX_SWITCH]     = "ctx-switches",
+    [PERF_PAGE_FAULTS]    = "page-faults",
+    [PERF_CPU_CYCLES]     = "cpu-cycles",
+    [PERF_INSTR_RETIRED]  = "retired-instrs",
+    [PERF_BRANCH_MISSES]  = "branch-misses",
+    [PERF_CPU_MIGRATIONS] = "migrations",
+    [PERF_CACHE_MISSES]   = "cache-misses",
+    [PERF_DTLB_LOAD_MISS] = "dtlb-load-misses",
+    [PERF_ITLB_LOAD_MISS] = "itlb-load-misses",
+    NULL
+};
 
-typedef enum exp_id {
-    EXP_SCAN,
-} exp_id_t;
+
+static void
+set_perf_opt (exp_options_t * opts, const char * name)
+{
+    if (!name) {
+        name = "cpu-cycles";
+    }
+
+    for (int i = 0; i < PERF_NUM_COUNTERS; i++) {
+        if (strcmp(name, perf_types[i]) == 0) {
+            perf_arg_t * arg;
+            arg = NEWZ(perf_arg_t);
+            MALLOC_CHECK_VOID(arg, "perf argument");
+            arg->name = (void*)perf_types[i];
+            arg->type = i;
+
+            opts->cntr_arg = (void*)arg;
+
+            break;
+        }
+    }
+
+    if (!opts->cntr_arg) {
+        ERROR("Unknown perf counter type (%s)\n", name);
+        exit(EXIT_FAILURE);
+    }
+}
+
 
 static void
 set_impl_op(operator_t op, char *impl_name)
@@ -850,11 +887,10 @@ main (int argc, char ** argv){
     int c;
     unsigned throwout = DEFAULT_THROWOUT;
 	char * exp_str    = DEFAULT_EXP_STR;
-	int exp_id        = DEFAULT_EXP;
 	time_int * runtimes;
 	char *subopts;
 	char *subvalue;
-	
+
 	options = defaultOptions();
 	srand(time(NULL));
 
@@ -874,6 +910,7 @@ main (int argc, char ** argv){
 			{"tabletype", required_argument, 0, 'y'},
 			{"domainsize", required_argument, 0, 'd'},
 			{"implementations", required_argument, 0, 'i'},
+            {"counter", required_argument, 0, 'l'},
             {0, 0, 0, 0}
         };
 
@@ -886,7 +923,8 @@ main (int argc, char ** argv){
         };
 
 
-        c = getopt_long(argc, argv, "t:k:shvu:n:c:y:d:i:", lopts, &optidx);
+
+        c = getopt_long(argc, argv, "t:k:shvu:n:c:y:d:i:l:", lopts, &optidx);
 
         if (c == -1) {
             break;
@@ -900,7 +938,6 @@ main (int argc, char ** argv){
                 throwout = atoi(optarg);
                 break;
             case 's':
-                exp_id = EXP_SCAN;
                 exp_str = "scan";
                 break;
             case 'h':
@@ -942,7 +979,30 @@ main (int argc, char ** argv){
 						default:
 							/* Unknown suboption. */
 							printf("Unknown operator implementation option \"%s\"\n", saved);
-							exit(1);
+							exit(EXIT_FAILURE);
+					}
+				}
+				break;
+            case 'l':
+            	subopts = optarg;
+				while (*subopts != '\0')
+				{
+					char *saved = subopts;
+					int subo = getsubopt(&subopts, (char **)cntr_opts, &subvalue);
+					switch(subo)
+					{
+                        case COUNTER_TYPE_GTOD:
+                        case COUNTER_TYPE_CGT:
+                            options.cntr_type = subo;
+                            break;
+                        case COUNTER_TYPE_PERF:
+                            options.cntr_type = subo;
+							set_perf_opt(&options, subvalue);
+							break;
+						default:
+							/* Unknown suboption. */
+							printf("Unknown counter type\"%s\"\n", saved);
+							exit(EXIT_FAILURE);
 					}
 				}
 				break;
@@ -952,25 +1012,27 @@ main (int argc, char ** argv){
 
     }
 
-    INFO("# table scan experiment:\n");
-    INFO("# Clocksource = clock_gettime(CLOCK_REALTIME)\n");
     INFO("# Experiment = %s\n", exp_str);
-    INFO("# Output is in ns\n");
     INFO("# %d throwout\n", throwout);
     print_options();
     runtimes = NEWA(time_int, options.repetitions);
+
+    counter_init(options.cntr_type, options.cntr_arg);
     
     for(int i = 0; i < options.repetitions; i++)
     {
     	runtimes[i] = driver();
     }
 
-    printf("\n\nRUNTIMES (sec): [");
+    printf("\n\nCOUNTER VALS: [");
     for(int i = throwout; i < options.repetitions; i++)
     {
-    	printf("%f%s", ((double) runtimes[i]) / 1000000, (i < options.repetitions - 1) ? ", ":  "");
+    	printf("%lu%s", runtimes[i], (i < options.repetitions - 1) ? ", ":  "");
     }
     printf("]\n\n");
+
+    counter_deinit();
+
     return 0;
 }
 
