@@ -1,5 +1,5 @@
 CC:=gcc
-CFLAGS:=-O0 -Wall -g -I. -Iinclude
+CFLAGS:=-O0 -Wall -Wextra -Wshadow -g -I. -Iinclude
 LIBS:= -lperf
 LDFLAGS:= -L$(PWD)/lib $(LIBS) -Wl,-rpath=$(PWD)/lib
 #CFLAGS:=-O3 -Wall -g -msse2 -ffast-math

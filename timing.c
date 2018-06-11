@@ -40,10 +40,11 @@ static const char * name_map[] = {
     "perf counter",
 };
 
-
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void * 
 gtod_init (void * arg)
 {
+#pragma GCC diagnostic pop
     struct stateless_data * data = NEWZ(struct stateless_data);
     MALLOC_CHECK(data, "gtod timing data");
     return data;
@@ -101,13 +102,16 @@ gtod_get (void * priv)
 } 
 
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void
 gtod_report (void * priv)
 {
+#pragma GCC diagnostic pop
     //struct stateless_data * data = (struct stateless_data*)priv;
     ERROR("%s not implemented\n", __func__);
     exit(EXIT_FAILURE);
 }
+
 
 
 static void
@@ -129,9 +133,11 @@ static struct cntr_ops gtod_cntr_ops = {
 }; 
 
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void * 
 cgt_init (void * arg)
 {
+#pragma GCC diagnostic pop
     struct stateless_data * data = NEWZ(struct stateless_data);
     MALLOC_CHECK(data, "clock_gettime timing data");
     return data;
@@ -188,9 +194,11 @@ cgt_get (void * priv)
     return 0;
 }
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void
 cgt_report (void * priv)
 {
+#pragma GCC diagnostic pop
     //struct stateless_data * data = (struct stateless_data*)priv;
     ERROR("%s not implemented\n", __func__);
     exit(EXIT_FAILURE);
@@ -283,9 +291,11 @@ perf_stop (void * priv)
 }
 
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void
 perf_reset (void * priv)
 {
+#pragma GCC diagnostic pop
     // nothing to do
 }
 
@@ -297,9 +307,11 @@ perf_get (void * priv)
     return libperf_readcounter(pd->lp_data, pd->lp_type);
 }
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 static void 
 perf_report (void * priv)
 {
+#pragma GCC diagnostic pop
     //struct perf_data * pd = (struct perf_data*)priv;
     ERROR("%s not implemented\n", __func__);
     exit(EXIT_FAILURE);
