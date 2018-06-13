@@ -84,6 +84,7 @@ typedef enum operator {
 	SELECTION_CONST = 0,
 	SELECTION_ATT,
 	PROJECTION,
+	SORT,
 	NUM_OPS
 } operator_t;
 
@@ -140,6 +141,8 @@ static void usage (char * prog);
 static void version (void);
 static uint64_t driver (void);
 static void set_impl_op(operator_t op, char *impl_name);
+static void mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col);
+static col_table_t * mergesort(col_table_t *in, size_t col);
 
 
 // local global vars ;-)
@@ -164,19 +167,27 @@ static op_implementation_info_t impl_infos[] = {
 				{ "inplace", NULL, NULL, NULL, NULL },
 				{ projection, NULL, NULL, NULL, NULL },
 				1
-		}
+		},
+		{
+				SORT,
+				{"mergesort", NULL, NULL, NULL, NULL},
+				{mergesort  , NULL, NULL, NULL, NULL},
+				1
+		},
 };
 
 static op_implementation_t default_impls[] = {
 		basic_rowise_selection_const, // SELECTION_CONST
 		NULL, // SELECTION_ATT
-		projection // PROJECTION
+		projection, // PROJECTION
+		mergesort,
 };
 
 static const char * op_names[] = {
 		[SELECTION_CONST] = "selection_const",
 		[SELECTION_ATT] = "selection_att",
 		[PROJECTION] = "projection",
+		[SORT] = "sort",
 };
 
 
@@ -296,6 +307,26 @@ createColTable (size_t num_chunks, size_t chunk_size, size_t num_cols)
 	print_table_info(t);
 
 	return t;
+}
+
+static void
+copy_row(col_table_t *src, size_t src_row, col_table_t *dst, size_t dst_row) {
+	size_t src_chunk     = src_row / options.chunksize;
+	size_t src_chunk_row = src_row % options.chunksize;
+	size_t dst_chunk     = dst_row / options.chunksize;
+	size_t dst_chunk_row = dst_row % options.chunksize;
+
+	for(size_t column = 0; column < src->num_cols; ++column) {
+		dst->chunks[dst_chunk]->columns[column]->data[dst_chunk_row] =
+		src->chunks[src_chunk]->columns[column]->data[src_chunk_row];
+	}
+}
+
+static val_t
+get_cell(col_table_t *src, size_t row, size_t column) {
+	size_t chunk     = row / options.chunksize;
+	size_t chunk_row = row % options.chunksize;
+	return src->chunks[chunk]->columns[column]->data[chunk_row];
 }
 
 static inline void
@@ -746,6 +777,74 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
     return r;
 }
 
+static col_table_t *
+mergesort(col_table_t *in, size_t col)
+{
+	INFO("SORT\n");
+	INFO(" => input table:");
+	print_table_info(in);
+
+	col_table_t * out = NEW(col_table_t);
+	out->num_chunks = in->num_chunks;
+	out->num_cols = in->num_cols;
+	out->num_rows = in->num_chunks * options.chunksize;
+	out->chunks = NEWPA(table_chunk_t, out->num_chunks);
+	MALLOC_CHECK_NO_MES(out->chunks);
+
+	TIMEIT("create col table",
+		for(size_t i = 0; i < out->num_chunks; i++)
+		{
+			table_chunk_t *tc = NEW(table_chunk_t);
+			MALLOC_CHECK(tc, "table chunks");
+
+			out->chunks[i] = tc;
+			tc->columns = NEWPA(column_chunk_t, out->num_cols);
+			MALLOC_CHECK_NO_MES(tc->columns);
+
+			for (size_t j = 0; j < out->num_cols; j++)
+			{
+				column_chunk_t *c = NEW(column_chunk_t);
+				MALLOC_CHECK(c, "column chunks");
+
+				tc->columns[j] = c;
+				c->chunk_size = options.chunksize;
+				c->data = NEWA(val_t, c->chunk_size);
+				MALLOC_CHECK(c->data, "chunk data");
+			}
+		}
+	);
+
+	mergesort_helper(in, 0, in->num_rows, out, col);
+
+	free_col_table(in);
+
+	return out;
+}
+
+static void
+mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col) {
+	if (stop - start >= 2) {
+		size_t mid = (start + stop) / 2;
+
+		// recurse
+		mergesort_helper(in, start, mid , out, col);
+		mergesort_helper(in, mid  , stop, out, col);
+
+		// merge firstRun:mid and secondRun: stop
+		size_t firstRun  = start;
+		size_t secondRun = mid  ;
+		for (size_t k = start; k < stop; k++) {
+			if (firstRun < mid && (secondRun >= stop || get_cell(in, firstRun, col) <= get_cell(in, secondRun, col))) {
+				copy_row(in, firstRun, out, k);
+				firstRun++;
+			} else {
+				copy_row(in, secondRun, out, k);
+				secondRun++;
+			}
+		}
+	}
+}
+
 static void
 usage (char * prog)
 {
@@ -802,6 +901,7 @@ driver (void)
 
     counter_start();
 
+	table = options.impls[SORT](table, 2);
 	table = options.impls[PROJECTION](table, proj, 4);
 	table = options.impls[SELECTION_CONST](table, 1, 1);
 
