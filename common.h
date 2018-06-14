@@ -24,6 +24,10 @@
  *
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
 #define INFO(fmt, args...)  printf("DB-MV: " fmt, ##args)
 #define DEBUG(fmt, args...) fprintf(stderr, "DB-MB DBG: " fmt, ##args)
 #define ERROR(fmt, args...) fprintf(stderr, "DB-MB ERR: " fmt, ##args)
