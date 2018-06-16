@@ -2,7 +2,7 @@ CC:=gcc
 INCLUDES:= -I. -Iinclude
 WARNINGS:= -Wall -Wextra -Wshadow
 CFLAGS_DBG:=-O0 -g
-CFLAGS_OPT:=-O3 -msse2 -ffast-math -funroll-loops
+CFLAGS_OPT:=-O3 -msse2 -ffast-math #-funroll-loops
 LIBS:= -lperf
 LDFLAGS:= -L$(PWD)/lib $(LIBS) -Wl,-rpath=$(PWD)/lib
 SOURCES:=$(shell ls *.c)

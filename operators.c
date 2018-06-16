@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "common.h"
 #include "timing.h"
 #include "operators.h"
@@ -499,12 +500,63 @@ mergesort(col_table_t *in, size_t col)
 }
 
 void
+load_row(col_table_t *table, size_t chunk_size, size_t row, size_t column,
+		 size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t *val) {
+	// chunk and val are optional, but they must both be present or absent together.
+
+	*chunk_no     = row / chunk_size;
+	*chunk_offset = row % chunk_size;
+	if (chunk) {
+		*chunk = *table->chunks[*chunk_no];
+	}
+	if (val) {
+		*val = chunk->columns[column]->data[*chunk_offset];
+	}
+}
+
+void
+load_next_row(col_table_t *table, size_t chunk_size, size_t column,
+			  size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t *val, bool *done) {
+	// loads the chunk containing the next row
+	// chunk and val are optional, but they must both be present or absent together.
+
+	++*chunk_offset;
+	if (*chunk_offset < chunk_size) {
+		// do nothing. Yay!
+	} else {
+		// reset chunk offset and move to next chunk
+		*chunk_offset = 0;
+		++*chunk_no;
+		if (*chunk_no == table->num_chunks) {
+			*done = true;
+		} else {
+			if (chunk) {
+				*chunk = *table->chunks[*chunk_no];
+			}
+		}
+	}
+	if (val && !*done) {
+		// this might hit the cache now? or not because of the column indirection
+		*val = chunk->columns[column]->data[*chunk_offset];
+	}
+}
+
+void
+copy_row(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_offset, size_t num_cols) {
+	for(size_t column = 0; column < num_cols; ++column) {
+		dst.columns[column]->data[dst_offset] =
+		src.columns[column]->data[src_offset];
+	}
+}
+
+void merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, size_t col);
+
+void
 mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col) {
+	// TODO: combine with a different sorting algorithm for small sizes (size of about a cachline or less)
 	// TODO: implement radix sort
 	// TODO: look into glibc/Python sort
-	// TODO: document steps in journal
 	// TODO: copy_row and get_cell could take a pointer to the column_chunk
-	// TODO: combine with a different sorting algorithm for small sizes (size of about a cachline or less)
 	if (stop - start >= 2) {
 		size_t mid = (start + stop) / 2;
 
@@ -512,19 +564,81 @@ mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, s
 		mergesort_helper(in, start, mid , out, col);
 		mergesort_helper(in, mid  , stop, out, col);
 
-		// merge firstRun:mid and secondRun:stop
-		size_t firstRun  = start;
-		size_t secondRun = mid  ;
+		// merge in[start:mid] and in[mid:stop] into out
+		// I will call in[start:mid] run1
+		// and in[mid:stop] run2
+		merge(in, start, mid, stop, out, col);
+	}
+}
 
-		// TODO: column-first looping
-		for (size_t k = start; k < stop; k++) {
-			if (firstRun < mid && (secondRun >= stop || get_cell(in, firstRun, col) <= get_cell(in, secondRun, col))) {
-				copy_row(in, firstRun, out, k);
-				firstRun++;
+void
+merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, size_t col) {
+	size_t in_chunk_size = get_chunk_size(in);
+	size_t out_chunk_size = get_chunk_size(out);
+	size_t num_cols = in->num_cols;
+
+	size_t run1_chunk_no;
+	size_t run1_chunk_offset;
+	table_chunk_t run1_chunk;
+	val_t run1_val;
+	load_row(in, in_chunk_size, start, col,
+			 &run1_chunk_no, &run1_chunk_offset, &run1_chunk, &run1_val);
+
+	size_t run2_chunk_no;
+	size_t run2_chunk_offset;
+	table_chunk_t run2_chunk;
+	val_t run2_val;
+	load_row(in, in_chunk_size, start, col,
+			 &run2_chunk_no, &run2_chunk_offset, &run2_chunk, &run2_val);
+
+	size_t start_chunk_no;
+	size_t start_chunk_offset;
+	load_row(in, in_chunk_size, start, col,
+			 &start_chunk_no, &start_chunk_offset, NULL, NULL);
+
+	size_t mid_chunk_no;
+	size_t mid_chunk_offset;
+	load_row(in, in_chunk_size, mid, col,
+			 &mid_chunk_no, &mid_chunk_offset, NULL, NULL);
+
+	size_t stop_chunk_no;
+	size_t stop_chunk_offset;
+	load_row(in, in_chunk_size, stop, col,
+			 &stop_chunk_no, &stop_chunk_offset, NULL, NULL);
+
+	bool run1_empty = false;
+	bool run2_empty = false;
+
+	size_t out_chunk_no = start_chunk_no;
+	size_t out_chunk_offset = start_chunk_offset;
+	for (; out_chunk_no < out->num_chunks; out_chunk_no++) {
+		// out_chunk_no < out->num_chunks is just an upper bound for valid records. We often terminate early.
+		// but I want to assert we have a valid record before the next statment:
+		table_chunk_t out_chunk = *out->chunks[out_chunk_no];
+
+		for (; out_chunk_offset < out_chunk_size; out_chunk_offset++) {
+			// iterate over the whole chunk
+
+			if (run1_empty && run2_empty) {
+				// but stop if we get out of data (most common path)
+				goto done;
+			}
+
+			if (!run1_empty && (run2_empty || run1_val < run2_val)) {
+				copy_row(run1_chunk, run1_chunk_offset, out_chunk, out_chunk_offset, num_cols);
+				load_next_row(in, in_chunk_size, col,
+							  &run1_chunk_no, &run1_chunk_offset, &run1_chunk, &run1_val, &run1_empty);
+				// update whether or not run1 is empty
+				run1_empty = (run1_chunk_no == mid_chunk_no && run1_chunk_offset == mid_chunk_offset);
 			} else {
-				copy_row(in, secondRun, out, k);
-				secondRun++;
+				copy_row(run2_chunk, run2_chunk_offset, out_chunk, out_chunk_offset, num_cols);
+				load_next_row(in, in_chunk_size, col,
+							  &run2_chunk_no, &run2_chunk_offset, &run2_chunk, &run2_val, &run2_empty);
+				// update whether or not run2 is empty
+				run2_empty = (run2_chunk_no == stop_chunk_no && run2_chunk_offset == stop_chunk_offset);
 			}
 		}
+		out_chunk_offset = 0;
 	}
+ done: return;
 }

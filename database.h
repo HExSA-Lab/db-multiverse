@@ -50,8 +50,6 @@ typedef col_table_t* (*op_implementation_t) ();
 void print_table_info (col_table_t *t);
 col_table_t *create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigned int domain_size);
 void free_col_table (col_table_t *t);
-void copy_row(col_table_t *src, size_t src_row, col_table_t *dst, size_t dst_row);
-val_t get_cell(col_table_t *src, size_t row, size_t column);
 column_chunk_t *create_col_chunk(size_t chunksize);
 void free_col_chunk (column_chunk_t *c);
 size_t get_chunk_size(col_table_t *t);
