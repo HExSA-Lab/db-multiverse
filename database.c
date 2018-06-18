@@ -100,3 +100,38 @@ inline size_t
 get_chunk_size(col_table_t *t) {
        return t->chunks[0]->columns[0]->chunk_size;
 }
+
+col_table_t *
+create_col_table_like (col_table_t *in) {
+	col_table_t * out = NEW(col_table_t);
+	out->num_chunks = in->num_chunks;
+	out->num_cols = in->num_cols;
+	out->num_rows = in->num_chunks * get_chunk_size(in);
+	out->chunks = NEWPA(table_chunk_t, out->num_chunks);
+	MALLOC_CHECK_NO_MES(out->chunks);
+
+	TIMEIT("create col table",
+		for(size_t i = 0; i < out->num_chunks; i++)
+		{
+			table_chunk_t *tc = NEW(table_chunk_t);
+			MALLOC_CHECK(tc, "table chunks");
+
+			out->chunks[i] = tc;
+			tc->columns = NEWPA(column_chunk_t, out->num_cols);
+			MALLOC_CHECK_NO_MES(tc->columns);
+
+			for (size_t j = 0; j < out->num_cols; j++)
+			{
+				column_chunk_t *c = NEW(column_chunk_t);
+				MALLOC_CHECK(c, "column chunks");
+
+				tc->columns[j] = c;
+				c->chunk_size = get_chunk_size(in);
+				c->data = NEWA(val_t, c->chunk_size);
+				MALLOC_CHECK(c->data, "chunk data");
+			}
+		}
+	);
+
+	return out;
+}

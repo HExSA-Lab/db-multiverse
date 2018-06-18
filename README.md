@@ -6,9 +6,13 @@ This is not a rigorous experiment, just trying to see if I am improving or regre
 
 - a49f1cf
   - implemented merge sort naively
-  - mean=13,335,555, std=497,855
+  - mean=13.335 std=0.497
 - 9b6fe98
   - no relevant change
-  - mean=13,242,108, std=462,601
+  - mean=13.242, std=0.462
+- 20b7263
+  - saved pointer to chunk
+  - mean=7.078, std=0.265, excluding 1 initial run
 - HEAD
-  - mean=7,078,681, std=265,748, HOWEVER this excludes an initial run which took 16,991,417
+  - switched to countingsort
+  - mean=1.531, mean=0.066, excluding 1 initial run

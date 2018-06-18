@@ -152,7 +152,7 @@ driver (exp_options_t options)
 
     counter_start();
 
-	table = options.impls[SORT](table, 2);
+	table = options.impls[SORT](table, 2, options.domain_size);
 	table = options.impls[PROJECTION](table, proj, 4);
 	table = options.impls[SELECTION_CONST](table, 1, 1);
 

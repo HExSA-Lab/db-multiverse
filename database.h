@@ -53,5 +53,6 @@ void free_col_table (col_table_t *t);
 column_chunk_t *create_col_chunk(size_t chunksize);
 void free_col_chunk (column_chunk_t *c);
 size_t get_chunk_size(col_table_t *t);
+col_table_t *create_col_table_like (col_table_t *in);
 
 #endif
