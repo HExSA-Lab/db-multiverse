@@ -469,18 +469,16 @@ mergesort(col_table_t *in, size_t col, __attribute__((unused)) size_t domain_siz
 	INFO(" => input table:");
 	print_table_info(in);
 
-	col_table_t* out = create_col_table_like (in);
+	col_table_t* tmp = create_col_table_like (in);
 
 	TIMEIT("actual sort",
-		   mergesort_helper(in, 0, in->num_rows, out, col);
+		   mergesort_helper(in, 0, in->num_rows, tmp, col);
 	);
 
-	free_col_table(in);
+	free_col_table(tmp);
 
-	return out;
+	return in;
 }
-
-#include <assert.h>
 
 void
 compute_offset(size_t chunk_size, size_t row,
@@ -545,7 +543,7 @@ copy_row(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_off
 void merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, size_t col);
 
 void
-mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col) {
+mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *tmp, size_t col) {
 	// http://sourceware.org/git/?p=glibc.git;a=blob;f=stdlib/qsort.c;h=264a06b8a924a1627b3c0fd507a3e2ca38dbc8a0;hb=HEAD
 	// http://sourceware.org/git/?p=glibc.git;a=blob;f=stdlib/msort.c;h=266c2538c07e86d058359d47388fe21cbfdb525a;hb=HEAD
 	// TODO: combine with a different sorting algorithm for small sizes (size of about a cachline or less)
@@ -555,19 +553,18 @@ mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, s
 		size_t mid = (start + stop) / 2;
 
 		// recurse
-		mergesort_helper(in, start, mid , out, col);
-		mergesort_helper(in, mid  , stop, out, col);
+		mergesort_helper(in, start, mid , tmp, col);
+		mergesort_helper(in, mid  , stop, tmp, col);
 
-		// merge in[start:mid] and in[mid:stop] into out
+		// merge in[start:mid] and in[mid:stop] into tmp
 		// I will call in[start:mid] run1
 		// and in[mid:stop] run2
-		merge(in, start, mid, stop, out, col);
+		merge(tmp, start, mid, stop, in, col);
 	}
 }
 
 void
 merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, size_t col) {
-	// TODO: instead of storing table_chunks, store the column-array-of-arrays or even the specific column-array that we are comparing on
 	size_t chunk_size = get_chunk_size(in);
 	size_t num_cols = in->num_cols;
 
