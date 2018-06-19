@@ -480,45 +480,57 @@ mergesort(col_table_t *in, size_t col, __attribute__((unused)) size_t domain_siz
 	return out;
 }
 
-void
-load_row(col_table_t *table, size_t chunk_size, size_t row, size_t column,
-		 size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t *val) {
-	// chunk and val are optional, but they must both be present or absent together.
+#include <assert.h>
 
+void
+compute_offset(size_t chunk_size, size_t row,
+			   size_t *chunk_no, size_t *chunk_offset) {
 	*chunk_no     = row / chunk_size;
 	*chunk_offset = row % chunk_size;
-	if (chunk) {
-		*chunk = *table->chunks[*chunk_no];
-	}
-	if (val) {
-		*val = chunk->columns[column]->data[*chunk_offset];
-	}
+}
+
+void
+load_row(col_table_t *table, size_t chunk_size, size_t row, size_t column,
+		 size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t **chunk_col, val_t *val) {
+
+	// chunk_no and chunk_offset are always set such that they point to the row'th row.
+	// If chunk is provided, the chunk is set.
+	// If col is provided, col and val are set based on column.
+
+	compute_offset(chunk_size, row, chunk_no, chunk_offset);
+	*chunk = *table->chunks[*chunk_no];
+	*chunk_col = chunk->columns[column]->data;
+	*val = (*chunk_col)[*chunk_offset];
 }
 
 void
 load_next_row(col_table_t *table, size_t chunk_size, size_t column,
-			  size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t *val, bool *done) {
-	// loads the chunk containing the next row
-	// chunk and val are optional, but they must both be present or absent together.
+			  size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t **col, val_t *val) {
+	// chunk_no and chunk_offset are always set such that they point to the row'th row.
+	// If chunk is provided, the chunk is set (you care about all columns).
+	// If col is provided, col and val are set based on column (you care about just one column).
+	// In the case that the chunk does not change after incrementing row (i.e. chunk_offset < chunk_size), this probably might be fast-ish.
+
+	bool done = false;
 
 	++*chunk_offset;
 	if (*chunk_offset < chunk_size) {
+		// this branch is most common by far
 		// do nothing. Yay!
 	} else {
 		// reset chunk offset and move to next chunk
 		*chunk_offset = 0;
 		++*chunk_no;
 		if (*chunk_no == table->num_chunks) {
-			*done = true;
+			done = true;
 		} else {
-			if (chunk) {
-				*chunk = *table->chunks[*chunk_no];
-			}
+			*chunk = *table->chunks[*chunk_no];
+			*col = chunk->columns[column]->data;
 		}
 	}
-	if (val && !*done) {
-		// this might hit the cache now? or not because of the column indirection
-		*val = chunk->columns[column]->data[*chunk_offset];
+	if (!done) {
+		// this might hit the cache?
+		*val = (*col)[*chunk_offset];
 	}
 }
 
@@ -562,31 +574,33 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 	size_t run1_chunk_no;
 	size_t run1_chunk_offset;
 	table_chunk_t run1_chunk;
+	val_t *run1_col;
 	val_t run1_val;
 	load_row(in, chunk_size, start, col,
-			 &run1_chunk_no, &run1_chunk_offset, &run1_chunk, &run1_val);
+			 &run1_chunk_no, &run1_chunk_offset, &run1_chunk, &run1_col, &run1_val);
 
 	size_t run2_chunk_no;
 	size_t run2_chunk_offset;
 	table_chunk_t run2_chunk;
+	val_t *run2_col;
 	val_t run2_val;
 	load_row(in, chunk_size, start, col,
-			 &run2_chunk_no, &run2_chunk_offset, &run2_chunk, &run2_val);
+			 &run2_chunk_no, &run2_chunk_offset, &run2_chunk, &run2_col, &run2_val);
 
 	size_t start_chunk_no;
 	size_t start_chunk_offset;
-	load_row(in, chunk_size, start, col,
-			 &start_chunk_no, &start_chunk_offset, NULL, NULL);
+	compute_offset(chunk_size, start,
+				   &start_chunk_no, &start_chunk_offset);
 
 	size_t mid_chunk_no;
 	size_t mid_chunk_offset;
-	load_row(in, chunk_size, mid, col,
-			 &mid_chunk_no, &mid_chunk_offset, NULL, NULL);
+	compute_offset(chunk_size, mid,
+				   &mid_chunk_no, &mid_chunk_offset);
 
 	size_t stop_chunk_no;
 	size_t stop_chunk_offset;
-	load_row(in, chunk_size, stop, col,
-			 &stop_chunk_no, &stop_chunk_offset, NULL, NULL);
+	compute_offset(chunk_size, stop,
+				   &stop_chunk_no, &stop_chunk_offset);
 
 	bool run1_empty = false;
 	bool run2_empty = false;
@@ -609,13 +623,13 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 			if (!run1_empty && (run2_empty || run1_val < run2_val)) {
 				copy_row(run1_chunk, run1_chunk_offset, out_chunk, out_chunk_offset, num_cols);
 				load_next_row(in, chunk_size, col,
-							  &run1_chunk_no, &run1_chunk_offset, &run1_chunk, &run1_val, &run1_empty);
+							  &run1_chunk_no, &run1_chunk_offset, &run1_chunk, &run1_col, &run1_val);
 				// update whether or not run1 is empty
 				run1_empty = (run1_chunk_no == mid_chunk_no && run1_chunk_offset == mid_chunk_offset);
 			} else {
 				copy_row(run2_chunk, run2_chunk_offset, out_chunk, out_chunk_offset, num_cols);
 				load_next_row(in, chunk_size, col,
-							  &run2_chunk_no, &run2_chunk_offset, &run2_chunk, &run2_val, &run2_empty);
+							  &run2_chunk_no, &run2_chunk_offset, &run2_chunk, &run2_col, &run2_val);
 				// update whether or not run2 is empty
 				run2_empty = (run2_chunk_no == stop_chunk_no && run2_chunk_offset == stop_chunk_offset);
 			}
@@ -682,18 +696,19 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 
 	size_t in_chunk_no;
 	size_t in_chunk_offset;
-	load_row(in, chunk_size, start, col,
-			 &in_chunk_no, &in_chunk_offset, NULL, NULL);
+	compute_offset(chunk_size, start,
+				   &in_chunk_no, &in_chunk_offset);
 
 	size_t stop_chunk_no;
 	size_t stop_chunk_offset;
-	load_row(in, chunk_size, stop, col,
-			 &stop_chunk_no, &stop_chunk_offset, NULL, NULL);
+	compute_offset(chunk_size, stop,
+				   &stop_chunk_no, &stop_chunk_offset);
 
 	for(; in_chunk_no < in->num_chunks; in_chunk_no++) {
 		// out_chunk_no < out->num_chunks is just an upper bound for valid records. We often terminate early.
 		// but I want to assert we have a valid record before the next statment:
 		table_chunk_t in_chunk = *in->chunks[in_chunk_no];
+		val_t *col_data = in->chunks[in_chunk_no]->columns[col]->data;
 		//DEBUG("in %ld\n", in_chunk_no);
 
 		for(; in_chunk_offset < chunk_size; in_chunk_offset++) {
@@ -704,7 +719,7 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 				goto done1;
 			}
 
-			val_t domain_elem = in_chunk.columns[col]->data[in_chunk_offset];
+			val_t domain_elem = col_data[in_chunk_offset];
 
 			*(table_chunk_t*) array_ends[domain_elem] = in_chunk;
 			array_ends[domain_elem] += sizeof(table_chunk_t);
@@ -721,8 +736,8 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 	size_t out_chunk_offset;
 
  done1:
-	load_row(in, chunk_size, start, col,
-			 &out_chunk_no, &out_chunk_offset, NULL, NULL);
+	compute_offset(chunk_size, start,
+				   &out_chunk_no, &out_chunk_offset);
 
 	for(; out_chunk_no < out->num_chunks; out_chunk_no++) {
 		// out_chunk_no < out->num_chunks is just an upper bound for valid records. We often terminate early.
