@@ -1,4 +1,4 @@
-CC:=clang
+CC:=gcc
 INCLUDES:= -I. -Iinclude
 WARNINGS:= -Wall -Wextra -Wshadow
 CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) -O0 -g
@@ -11,6 +11,9 @@ all: main
 
 run_data: main
 	./main -t 6 | tee /tmp/output | grep 'actual sort' | grep -oP '\d*' | tail -n +2 | ./mean && cat /tmp/output
+
+sorting_runtimes.png: sorting_runtimes.py README.md
+	./sorting_runtimes.py
 
 run: main
 	./main
@@ -38,10 +41,10 @@ lib/libperf.so: lib/libperf.so.0.0.0
 lib/libperf.so.0: lib/libperf.so.0.0.0
 	ln -s $(PWD)/lib/libperf.so.0.0.0 lib/libperf.so.0
 
-clean: distclean
-	@rm -f main main_debug *.o *.o_debug
+clean:
+	@rm -f main main_debug *.o *.o_debug sorting_runtimes.png
 
-distclean:
+distclean: clean
 	@rm -f  lib/libperf.so.0 lib/libperf.so
 
-.PHONY: clean distclean run debug run_data
+.PHONY: clean distclean run debug run_data sorting_runtime.png libs

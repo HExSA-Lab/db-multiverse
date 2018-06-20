@@ -16,10 +16,30 @@ mergesort:
     mean: 7.078
     std: 0.265
 
-  - commit: HEAD
+  - commit: 4bc0628
     description: saved pointer to column data
     mean: 7.310
     std: 0.265
+
+  - commit: HEAD
+    description: >
+      corrected logical error in mergesort.
+
+      Does more copying. Note that the actual sorting time did not change much (even
+      got smaller), but the time to make the out array got big. This time is not
+      reported in "actual sort".
+
+    mean: 6.889
+    std: 0.214
+
+? |-
+   merge and
+   countingsort
+:
+  - commit: HEAD
+    description: initial trial
+    mean: 6.345
+    std: 0.206
 
 countingsort:
   - commit: 3d26044
@@ -27,7 +47,7 @@ countingsort:
     mean: 1.531
     std: 0.066
 
-  - commit: HEAD
+  - commit: 4bc0628
     description: saved pointer to column data
     mean: 1.521
     std: 0.085
