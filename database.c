@@ -1,5 +1,6 @@
 #include "database.h"
 #include "timing.h"
+#include <string.h>
 
 val_t
 randVal(unsigned int domain_size)
@@ -103,32 +104,56 @@ get_chunk_size(col_table_t *t) {
 
 col_table_t *
 create_col_table_like (col_table_t *in) {
+	size_t chunk_size = get_chunk_size(in);
+
 	col_table_t * out = NEW(col_table_t);
+	MALLOC_CHECK(out, "table");
+
 	out->num_chunks = in->num_chunks;
 	out->num_cols = in->num_cols;
 	out->num_rows = in->num_chunks * get_chunk_size(in);
+
 	out->chunks = NEWPA(table_chunk_t, out->num_chunks);
-	MALLOC_CHECK_NO_MES(out->chunks);
+	MALLOC_CHECK(out->chunks, "chunks array");
 
 	TIMEIT("create col table",
-		for(size_t i = 0; i < out->num_chunks; i++)
+		for(size_t chunk_no = 0; chunk_no < out->num_chunks; chunk_no++)
 		{
-			table_chunk_t *tc = NEW(table_chunk_t);
-			MALLOC_CHECK(tc, "table chunks");
+			out->chunks[chunk_no] = NEW(table_chunk_t);
+			MALLOC_CHECK(out->chunks[chunk_no], "chunk");
 
-			out->chunks[i] = tc;
-			tc->columns = NEWPA(column_chunk_t, out->num_cols);
-			MALLOC_CHECK_NO_MES(tc->columns);
+			out->chunks[chunk_no]->columns = NEWPA(column_chunk_t, out->num_cols);
+			MALLOC_CHECK(out->chunks[chunk_no]->columns, "columns array");
 
-			for (size_t j = 0; j < out->num_cols; j++)
+			for (size_t col = 0; col < out->num_cols; col++)
 			{
-				column_chunk_t *c = NEW(column_chunk_t);
-				MALLOC_CHECK(c, "column chunks");
+				out->chunks[chunk_no]->columns[col] = NEW(column_chunk_t);
+				MALLOC_CHECK(out->chunks[chunk_no]->columns[col], "column");
 
-				tc->columns[j] = c;
-				c->chunk_size = get_chunk_size(in);
-				c->data = NEWA(val_t, c->chunk_size);
-				MALLOC_CHECK(c->data, "chunk data");
+				out->chunks[chunk_no]->columns[col]->chunk_size = chunk_size;
+
+				out->chunks[chunk_no]->columns[col]->data = NEWA(val_t, chunk_size);
+				MALLOC_CHECK(out->chunks[chunk_no]->columns[col]->data, "column data");
+			}
+		}
+	);
+
+	return out;
+}
+
+col_table_t *
+copy_col_table (col_table_t *in) {
+	size_t chunk_size = get_chunk_size(in);
+	col_table_t * out = create_col_table_like(in);
+
+	TIMEIT("copy col table",
+		for(size_t chunk_no = 0; chunk_no < out->num_chunks; chunk_no++)
+		{
+			for (size_t col = 0; col < out->num_cols; col++)
+			{
+				memcpy(in->chunks[chunk_no]->columns[col]->data,
+					   out->chunks[chunk_no]->columns[col]->data,
+					   chunk_size * sizeof(val_t));
 			}
 		}
 	);

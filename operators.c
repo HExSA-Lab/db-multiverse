@@ -8,9 +8,9 @@ col_table_t *projection(col_table_t *t, size_t *pos, size_t num_proj);
 col_table_t *selection_const (col_table_t *t, size_t col, val_t val);
 col_table_t *basic_rowise_selection_const (col_table_t *t, size_t col, val_t val);
 col_table_t *scatter_gather_selection_const (col_table_t *t, size_t col, val_t val);
-void mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col);
 col_table_t * mergesort(col_table_t *in, size_t col, size_t);
 col_table_t * countingsort(col_table_t *in, size_t col, size_t domain_size);
+col_table_t * mergecountingsort(col_table_t *in, size_t col, size_t domain_size);
 
 // information about operator implementations
 op_implementation_info_t impl_infos[] = {
@@ -34,9 +34,12 @@ op_implementation_info_t impl_infos[] = {
 		},
 		{
 				SORT,
-				{"mergesort", "countingsort", NULL, NULL, NULL},
-				{mergesort  ,  countingsort , NULL, NULL, NULL},
+				{"mergesort", "countingsort", "mergecountingsort", NULL, NULL},
+				{mergesort  ,  countingsort ,  mergecountingsort , NULL, NULL},
 				1
+				// TODO: look into glibc/Python sort
+				// http://sourceware.org/git/?p=glibc.git;a=blob;f=stdlib/qsort.c;h=264a06b8a924a1627b3c0fd507a3e2ca38dbc8a0;hb=HEAD
+				// http://sourceware.org/git/?p=glibc.git;a=blob;f=stdlib/msort.c;h=266c2538c07e86d058359d47388fe21cbfdb525a;hb=HEAD
 		},
 };
 
@@ -44,7 +47,7 @@ op_implementation_t default_impls[] = {
 		basic_rowise_selection_const, // SELECTION_CONST
 		NULL, // SELECTION_ATT
 		projection, // PROJECTION
-		countingsort,
+		mergecountingsort,
 };
 
 const char * op_names[] = {
@@ -462,6 +465,8 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
     return r;
 }
 
+void mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col);
+
 col_table_t *
 mergesort(col_table_t *in, size_t col, __attribute__((unused)) size_t domain_size)
 {
@@ -469,15 +474,15 @@ mergesort(col_table_t *in, size_t col, __attribute__((unused)) size_t domain_siz
 	INFO(" => input table:");
 	print_table_info(in);
 
-	col_table_t* tmp = create_col_table_like (in);
+	col_table_t* out = copy_col_table (in);
 
 	TIMEIT("actual sort",
-		   mergesort_helper(in, 0, in->num_rows, tmp, col);
+		   mergesort_helper(in, 0, in->num_rows, out, col);
 	);
 
-	free_col_table(tmp);
+	free_col_table(in);
 
-	return in;
+	return out;
 }
 
 void
@@ -543,23 +548,20 @@ copy_row(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_off
 void merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, size_t col);
 
 void
-mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *tmp, size_t col) {
-	// http://sourceware.org/git/?p=glibc.git;a=blob;f=stdlib/qsort.c;h=264a06b8a924a1627b3c0fd507a3e2ca38dbc8a0;hb=HEAD
-	// http://sourceware.org/git/?p=glibc.git;a=blob;f=stdlib/msort.c;h=266c2538c07e86d058359d47388fe21cbfdb525a;hb=HEAD
-	// TODO: combine with a different sorting algorithm for small sizes (size of about a cachline or less)
-	// TODO: implement radix sort
-	// TODO: look into glibc/Python sort
+mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col) {
+	// sorts in[start:stop] and puts the result in out[start:stop]
+	// PRECONDITION: multiset(in[start:stop]) == multiset(out[start:stop])
+
 	if (stop - start >= 2) {
 		size_t mid = (start + stop) / 2;
 
 		// recurse
-		mergesort_helper(in, start, mid , tmp, col);
-		mergesort_helper(in, mid  , stop, tmp, col);
+		// Remember out[start:mid] has the same elements as in[start:mid].
+		mergesort_helper(out, start, mid , in, col); // in[start:mid] is sorted
+		mergesort_helper(out, mid  , stop, in, col); // in[stop :mid] is sorted
 
-		// merge in[start:mid] and in[mid:stop] into tmp
-		// I will call in[start:mid] run1
-		// and in[mid:stop] run2
-		merge(tmp, start, mid, stop, in, col);
+		// merge in[start:mid] with in[mid:stop], placing the result in out[start:stop], as desired.
+		merge(in, start, mid, stop, out, col);
 	}
 }
 
@@ -773,4 +775,49 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 	free(array);
 	free(array_starts);
 	free(array_ends);
+}
+
+void
+merge_counting_sort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col, size_t domain_size);
+
+col_table_t *
+mergecountingsort(col_table_t *in, size_t col, __attribute__((unused)) size_t domain_size)
+{
+	INFO("SORT\n");
+	INFO(" => input table:");
+	print_table_info(in);
+
+	col_table_t* out = copy_col_table (in);
+
+	TIMEIT("actual sort",
+		   merge_counting_sort_helper(in, 0, in->num_rows, out, col, domain_size);
+	);
+
+	free_col_table(in);
+
+	return out;
+}
+
+const size_t switch_to_other_sort = 100;
+
+void
+merge_counting_sort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col, size_t domain_size) {
+	// sorts in[start:stop] and puts the result in out[start:stop]
+	// PRECONDITION: multiset(in[start:stop]) == multiset(out[start:stop])
+
+	size_t len = stop - start;
+	if (stop - start >= switch_to_other_sort) {
+		size_t mid = (start + stop) / 2;
+
+		// recurse
+		// Remember out[start:mid] has the same elements as in[start:mid].
+		mergesort_helper(out, start, mid , in, col); // in[start:mid] is sorted
+		mergesort_helper(out, mid  , stop, in, col); // in[stop :mid] is sorted
+
+		// merge in[start:mid] with in[mid:stop], placing the result in out[start:stop], as desired.
+		merge(in, start, mid, stop, out, col);
+
+	} else if (len >= 2) {
+		countingsort_helper(in, start, stop, out, col, domain_size);
+	}
 }
