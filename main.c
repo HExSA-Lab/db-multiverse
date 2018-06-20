@@ -93,6 +93,9 @@ print_options (exp_options_t options)
     	    	printf(" # implementation for %s is %s\n", op_names[i], impl_name);
     		}
     	}
+		if (impl_name[0] == '\0') {
+			printf(" # implementation for %s is unknown\n", op_names[i]);
+		}
     }
 }
 

@@ -28,7 +28,7 @@ for algorithm_n, (algorithm, algorithm_data) in enumerate(data.items()):
     base_x += ver + 1
 
 plt.title('performance of various sorting algorithms')
-plt.ylabel('sort time')
+plt.ylabel('sort time (sec)')
 plt.xticks(np.array(range(base_x)) - 0.1, labels, rotation=60)
 plt.subplots_adjust(bottom=0.2)
 fig = plt.gcf()

@@ -143,20 +143,48 @@ create_col_table_like (col_table_t *in) {
 
 col_table_t *
 copy_col_table (col_table_t *in) {
-	size_t chunk_size = get_chunk_size(in);
 	col_table_t * out = create_col_table_like(in);
 
 	TIMEIT("copy col table",
 		for(size_t chunk_no = 0; chunk_no < out->num_chunks; chunk_no++)
 		{
-			for (size_t col = 0; col < out->num_cols; col++)
-			{
-				memcpy(in->chunks[chunk_no]->columns[col]->data,
-					   out->chunks[chunk_no]->columns[col]->data,
-					   chunk_size * sizeof(val_t));
-			}
+			copy_table_chunk(*in->chunks[chunk_no], *out->chunks[chunk_no], in->num_cols);
 		}
 	);
 
 	return out;
+}
+
+void
+copy_table_chunk(table_chunk_t in_chunk, table_chunk_t out_chunk, size_t num_cols) {
+	size_t chunk_size = in_chunk.columns[0]->chunk_size;
+
+	for (size_t col = 0; col < num_cols; col++) {
+		memcpy(in_chunk.columns[col]->data,
+			   out_chunk.columns[col]->data,
+			   chunk_size * sizeof(val_t));
+	}
+}
+
+table_chunk_t
+new_copy_table_chunk(table_chunk_t in_chunk, size_t num_cols) {
+	size_t chunk_size = in_chunk.columns[0]->chunk_size;
+
+	table_chunk_t out_chunk;
+
+	out_chunk.columns = NEWPA(column_chunk_t, num_cols);
+	MALLOC_NO_RET(out_chunk.columns, "columns array");
+
+	for (size_t col = 0; col < num_cols; col++) {
+		out_chunk.columns[col] = NEW(column_chunk_t);
+		MALLOC_NO_RET(out_chunk.columns[col], "column");
+
+		out_chunk.columns[col]->chunk_size = chunk_size;
+
+		out_chunk.columns[col]->data = NEWA(val_t, chunk_size);
+		MALLOC_NO_RET(out_chunk.columns[col]->data, "column data");
+
+		copy_table_chunk(in_chunk, out_chunk, num_cols);
+	}
+	return out_chunk;
 }

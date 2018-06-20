@@ -55,5 +55,7 @@ void free_col_chunk (column_chunk_t *c);
 size_t get_chunk_size(col_table_t *t);
 col_table_t *copy_col_table (col_table_t *in);
 col_table_t *create_col_table_like (col_table_t *in);
+void copy_table_chunk(table_chunk_t in_chunk, table_chunk_t out_chunk, size_t num_cols);
+table_chunk_t new_copy_table_chunk(table_chunk_t in_chunk, size_t num_cols);
 
 #endif

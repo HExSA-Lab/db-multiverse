@@ -21,7 +21,7 @@ mergesort:
     mean: 7.310
     std: 0.265
 
-  - commit: HEAD
+  - commit: 017955f
     description: >
       corrected logical error in mergesort.
 
@@ -36,10 +36,19 @@ mergesort:
    merge and
    countingsort
 :
-  - commit: HEAD
+  - commit: 3a40125
     description: initial trial
     mean: 6.345
     std: 0.206
+
+? |-
+    counting and
+    mergesort
+:
+  - commit: HEAD
+    description: initial trial
+    mean: 2.375
+    std: 0.092
 
 countingsort:
   - commit: 3d26044

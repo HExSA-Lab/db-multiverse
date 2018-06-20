@@ -37,6 +37,13 @@
 #define NEWA(typ,size) ((typ *) malloc(sizeof(typ) * size))
 #define NEWPA(typ,size) ((typ **) malloc(sizeof(typ*) * size))
 
+#define MALLOC_NO_RET(pointer, mes) \
+	do { \
+		if (!(pointer)) { \
+			ERROR("Could not allocate " #pointer  " (%s) in %s:%u\n", mes, __FUNCTION__, __LINE__); \
+		} \
+	} while(0)
+
 #define MALLOC_CHECK(pointer, mes) \
 	do { \
 		if (!(pointer)) { \
@@ -69,5 +76,9 @@
 #define DEFAULT_THROWOUT 0
 #define DEFAULT_EXP_STR "scan"
 #define DEFAULT_EXP      EXP_SCAN
+
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define SWAP(a, b, tmp) {tmp = a; a = b; b = tmp;}
 
 #endif

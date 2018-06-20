@@ -1,6 +1,6 @@
 CC:=gcc
 INCLUDES:= -I. -Iinclude
-WARNINGS:= -Wall -Wextra -Wshadow
+WARNINGS:= -Wall -Wextra
 CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) -O0 -g
 CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) -O3 -msse2 -ffast-math #-funroll-loops
 LIBS:= -lperf
