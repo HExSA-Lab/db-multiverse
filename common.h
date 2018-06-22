@@ -72,11 +72,6 @@
 
 #define VERSION_STRING "0.0.1"
 
-#define DEFAULT_TRIALS   1
-#define DEFAULT_THROWOUT 0
-#define DEFAULT_EXP_STR "scan"
-#define DEFAULT_EXP      EXP_SCAN
-
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define SWAP(a, b, tmp) {tmp = a; a = b; b = tmp;}

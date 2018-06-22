@@ -1,6 +1,9 @@
-#include <getopt.h>
-#include <string.h>
 #include <time.h>
+#include <string.h>
+#ifdef __linux
+// only supply getopt if we are running in userspace
+#include <getopt.h>
+#endif
 
 #include "common.h"
 #include "database.h"
@@ -15,6 +18,8 @@ typedef struct exp_options {
 	unsigned int domain_size;
 	unsigned int repetitions;
 	op_implementation_t *impls;
+    unsigned throwout;
+	char * exp_str;
 
     cntr_type_t cntr_type;
     void * cntr_arg;
@@ -49,8 +54,11 @@ defaultOptions (void)
 	o.domain_size = 100;
 	o.repetitions = 1;
 	o.impls = default_impls;
+    o.throwout = 0;
+	o.exp_str    = "scan";
     o.cntr_type = COUNTER_TYPE_GTOD;
     o.cntr_arg  = NULL;
+
 //	NEWA(op_implementation_t, NUM_OPS);
 //	if (! o.impls)
 //	{
@@ -68,10 +76,10 @@ defaultOptions (void)
 static void
 print_options (exp_options_t options)
 {
-    INFO("# Clocksource = %s\n", cntr_opts[options.cntr_type]);
+    printf(" # Clocksource = %s\n", cntr_opts[options.cntr_type]);
     if (options.cntr_type == COUNTER_TYPE_PERF) {
         perf_arg_t * arg = (perf_arg_t*)options.cntr_arg;
-        INFO("#   perf event: %s\n", arg->name);
+        printf(" #   perf event: %s\n", arg->name);
     }
 	printf(" # repetitions=%u\n", options.repetitions);
     printf(" # numchunks=%lu\n", options.num_chunks);
@@ -79,6 +87,8 @@ print_options (exp_options_t options)
     printf(" # numcols=%lu\n", options.num_cols);
     printf(" # tabletype=%u (0=columnar, 1=row)\n", options.table_type);
     printf(" # domainsize=%u\n", options.domain_size);
+    printf(" # Experiment = %s\n", options.exp_str);
+    printf(" # %d throwout\n", options.throwout);
     for(int i = 0; i < NUM_OPS; i++)
     {
     	op_implementation_info_t info = impl_infos[i];
@@ -102,20 +112,23 @@ print_options (exp_options_t options)
 static void
 usage (char * prog)
 {
+
+	exp_options_t options = defaultOptions();
+
     printf("Usage: %s [options]\n", prog);
     printf("\nOptions:\n");
 
-    printf("  -t, --trials <trial count> : number of experiments to run (default=%d)\n", DEFAULT_TRIALS);
-    printf("  -k, --throwout <throwout count> : number of iterations to throw away (default=%d)\n", DEFAULT_THROWOUT);
+    printf("  -t, --trials <trial count> : number of experiments to run (default=%d)\n", options.repetitions);
+    printf("  -k, --throwout <throwout count> : number of iterations to throw away (default=%d)\n", options.throwout);
     printf("  -h, ---help : display this message\n");
     printf("  -v, --version : display the version number and exit\n");
-    printf("  -u, --numchunks : number of table chunks (default=%lu)\n", defaultOptions().num_chunks);
-    printf("  -n, --chunksize : number of rows in each chunk (default=%lu)\n", defaultOptions().chunksize);
-    printf("  -c, --numcols : number of columns in the table (default=%lu)\n", defaultOptions().num_cols);
-    printf("  -y, --tabletype : type of table to be used (0=columnar, 1=row) (default=%u)\n", defaultOptions().table_type);
-    printf("  -d, --domainsize : a table's attribute values are sampled uniform random from [0, domainsize -1] (default=%u)\n", defaultOptions().domain_size);
+    printf("  -u, --numchunks : number of table chunks (default=%lu)\n", options.num_chunks);
+    printf("  -n, --chunksize : number of rows in each chunk (default=%lu)\n", options.chunksize);
+    printf("  -c, --numcols : number of columns in the table (default=%lu)\n", options.num_cols);
+    printf("  -y, --tabletype : type of table to be used (0=columnar, 1=row) (default=%u)\n", options.table_type);
+    printf("  -d, --domainsize : a table's attribute values are sampled uniform random from [0, domainsize -1] (default=%u)\n", options.domain_size);
     printf("  -i, --implementations : a list of key=value pairs selecting operator implementations\n");
-    printf("  -l, --counter : counter type (gettimeofday, clock_gettime, or perf-counter, default=%s)\n", cntr_opts[defaultOptions().cntr_type]);
+    printf("  -l, --counter : counter type (gettimeofday, clock_gettime, or perf-counter, default=%s)\n", cntr_opts[options.cntr_type]);
     printf("              Supported perf events (default is cpu-cycles):\n");
     printf("                  ctx-switches\n");
     printf("                  page-faults\n");
@@ -149,6 +162,7 @@ driver (exp_options_t options)
 	size_t proj[PROJ_SIZE] = { 0, 1, 2, 3 };
 
     counter_start();
+
 	col_table_t *table = create_col_table(options.num_chunks, options.chunksize, options.num_cols, options.domain_size);
 	INFO("created input table(s)\n");
 
@@ -187,8 +201,6 @@ static const char *perf_types[] =
     [PERF_ITLB_LOAD_MISS] = "itlb-load-misses",
     NULL
 };
-
-
 static void
 set_perf_opt (exp_options_t * opts, const char * name)
 {
@@ -216,7 +228,6 @@ set_perf_opt (exp_options_t * opts, const char * name)
     }
 }
 
-
 static void
 set_impl_op(operator_t op, char *impl_name, exp_options_t *options_ptr)
 {
@@ -242,18 +253,15 @@ set_impl_op(operator_t op, char *impl_name, exp_options_t *options_ptr)
 	}
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+void parse_options(exp_options_t *options, int argc, char ** argv) {
+#pragma GCC diagnostic pop
 
-int
-main (int argc, char ** argv){
+#ifdef _GETOPT_H
     int c;
-    unsigned throwout = DEFAULT_THROWOUT;
-	char * exp_str    = DEFAULT_EXP_STR;
-	time_int * runtimes;
 	char *subopts;
 	char *subvalue;
-
-	exp_options_t options = defaultOptions();
-	srand(time(NULL));
 
     while (1) {
 
@@ -293,13 +301,13 @@ main (int argc, char ** argv){
 
         switch (c) {
             case 't':
-                options.repetitions = atoi(optarg);
+                options->repetitions = atoi(optarg);
                 break;
             case 'k':
-                throwout = atoi(optarg);
+                options->throwout = atoi(optarg);
                 break;
             case 's':
-                exp_str = "scan";
+                options->exp_str = "scan";
                 break;
             case 'h':
                 usage(argv[0]);
@@ -310,19 +318,19 @@ main (int argc, char ** argv){
             case '?':
                 break;
             case 'u':
-            	options.num_chunks = (size_t) atoi(optarg);
+            	options->num_chunks = (size_t) atoi(optarg);
             	break;
             case 'n':
-            	options.chunksize = (size_t) atoi(optarg);
+            	options->chunksize = (size_t) atoi(optarg);
             	break;
             case 'c':
-            	options.num_cols = (size_t) atoi(optarg);
+            	options->num_cols = (size_t) atoi(optarg);
             	break;
             case 'y':
-            	options.table_type = (table_type_t) atoi(optarg); //TODO check that exists
+            	options->table_type = (table_type_t) atoi(optarg); //TODO check that exists
             	break;
             case 'd':
-            	options.domain_size = (unsigned int) atoi(optarg);
+            	options->domain_size = (unsigned int) atoi(optarg);
             	break;
             case 'i':
             	subopts = optarg;
@@ -335,7 +343,7 @@ main (int argc, char ** argv){
 						case SELECTION_CONST:
 						case SELECTION_ATT:
 						case PROJECTION:
-							set_impl_op(subo, subvalue, &options);
+							set_impl_op(subo, subvalue, options);
 							break;
 						default:
 							/* Unknown suboption. */
@@ -354,12 +362,13 @@ main (int argc, char ** argv){
 					{
                         case COUNTER_TYPE_GTOD:
                         case COUNTER_TYPE_CGT:
-                            options.cntr_type = subo;
+                            options->cntr_type = subo;
                             break;
                         case COUNTER_TYPE_PERF:
-                            options.cntr_type = subo;
-							set_perf_opt(&options, subvalue);
+                            options->cntr_type = subo;
+							set_perf_opt(options, subvalue);
 							break;
+
 						default:
 							/* Unknown suboption. */
 							printf("Unknown counter type\"%s\"\n", saved);
@@ -372,10 +381,18 @@ main (int argc, char ** argv){
         }
 
     }
+#endif
+}
 
-    INFO("# Experiment = %s\n", exp_str);
-    INFO("# %d throwout\n", throwout);
+int
+main (int argc, char ** argv){
+	time_int * runtimes;
+
+	exp_options_t options = defaultOptions();
+	parse_options(&options, argc, argv);
     print_options(options);
+
+	srand(time(NULL));
     runtimes = NEWA(time_int, options.repetitions);
 
     counter_init(options.cntr_type, options.cntr_arg);
@@ -386,7 +403,7 @@ main (int argc, char ** argv){
     }
 
     printf("\n\nCOUNTER VALS: [");
-    for(size_t i = throwout; i < options.repetitions; i++)
+    for(size_t i = options.throwout; i < options.repetitions; i++)
     {
     	printf("%lu%s", runtimes[i], (i < options.repetitions - 1) ? ", ":  "");
     }
