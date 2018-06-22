@@ -1,8 +1,15 @@
+#ifdef __USER
 #include <assert.h>
 #include <string.h>
-#include "common.h"
-#include "timing.h"
-#include "operators.h"
+#endif
+
+#ifdef __NAUTILUS__
+#include <nautilus/libccompat.h>
+#endif
+
+#include "test/common.h"
+#include "test/timing.h"
+#include "test/operators.h"
 
 // function declarations
 col_table_t *projection(col_table_t *t, size_t *pos, size_t num_proj);

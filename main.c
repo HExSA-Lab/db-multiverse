@@ -1,14 +1,18 @@
+#ifdef __USER
 #include <time.h>
 #include <string.h>
-#ifdef __linux
-// only supply getopt if we are running in userspace
 #include <getopt.h>
 #endif
 
-#include "common.h"
-#include "database.h"
-#include "operators.h"
-#include "timing.h"
+#ifdef __NAUTILUS__
+#include <nautilus/libccompat.h>
+#endif
+
+#include "test/common.h"
+#include "test/database.h"
+#include "test/operators.h"
+#include "test/timing.h"
+#include "test/main.h"
 
 typedef struct exp_options {
 	size_t num_chunks;
@@ -384,8 +388,14 @@ void parse_options(exp_options_t *options, int argc, char ** argv) {
 #endif
 }
 
-int
-main (int argc, char ** argv){
+#ifndef __NAUTILUS__
+int main (int argc, char ** argv){
+	db_tests_main(argc, argv);
+}
+#endif
+
+// In nautilus there is a name collision on "main"
+int db_tests_main (int argc, char ** argv){
 	time_int * runtimes;
 
 	exp_options_t options = defaultOptions();

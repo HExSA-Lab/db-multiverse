@@ -22,7 +22,13 @@
  * Copyright (c) 2018, Kyle C. Hale <khale@cs.iit.edu>
  * 
  */
+#ifdef __USER
 #include <stdint.h>
+#endif
+
+#ifdef __NAUTILUS__
+#include <nautilus/libccompat.h>
+#endif
 
 typedef uint64_t time_int;
 

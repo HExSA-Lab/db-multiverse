@@ -1,9 +1,10 @@
 CC:=gcc
-INCLUDES:= -I. -Iinclude
+# INCLUDES:= -I. -Iinclude
 WARNINGS:= -Wall -Wextra
-CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) -O0 -g
-CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) -O3 -msse2 -ffast-math #-funroll-loops
-LIBS:= -lperf
+CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) -O0 -g -D__USER
+CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) -O3 -msse2 -ffast-math  -D__USER
+#-funroll-loops
+# LIBS:= -lperf
 LDFLAGS:= -L$(PWD)/lib $(LIBS) -Wl,-rpath=$(PWD)/lib
 SOURCES:=$(shell find . -name '*.c' | grep -v './advanced_timing.c')
 

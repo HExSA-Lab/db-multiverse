@@ -1,6 +1,13 @@
-#include "database.h"
-#include "timing.h"
+#ifdef __USER
 #include <string.h>
+#endif
+
+#ifdef __NAUTILUS__
+#include <nautilus/libccompat.h>
+#endif
+
+#include "test/database.h"
+#include "test/timing.h"
 
 val_t
 randVal(unsigned int domain_size)
