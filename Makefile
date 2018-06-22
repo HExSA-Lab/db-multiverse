@@ -10,7 +10,7 @@ SOURCES:=$(shell ls *.c)
 all: main
 
 run_data: main
-	./main -t 6 | tee /tmp/output | grep 'actual sort' | grep -oP '\d*' | tail -n +2 | ./mean && cat /tmp/output
+	./main -t 5 -k 1 | tee /tmp/output | grep 'actual sort' | grep -oP '\d*' | ./mean > /tmp/output2 && cat /tmp/output && cat /tmp/output2
 
 sorting_runtimes.png: sorting_runtimes.py README.md
 	./sorting_runtimes.py
@@ -18,7 +18,13 @@ sorting_runtimes.png: sorting_runtimes.py README.md
 run: main
 	./main
 
-debug: main_debug
+run_small: main
+	./main --chunksize 3 --numchunks 3
+
+run_small_debug: main_debug
+	gdb -q main_debug -ex 'r --chunksize 3000 --numchunks 10'
+
+run_debug: main_debug
 	gdb -q main_debug -ex r
 
 %.o_debug: %.c

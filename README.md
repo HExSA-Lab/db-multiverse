@@ -45,7 +45,7 @@ mergesort:
     counting and
     mergesort
 :
-  - commit: HEAD
+  - commit: 2c978a0
     description: initial trial
     mean: 2.375
     std: 0.092
