@@ -102,13 +102,31 @@ uint64_t counter_get();
 const char * counter_get_name();
 
 // NOTE: this assumes a counter has already been started!
+// For now, I want this to be done the same exact way in Nautilus as on Linux
+/* #define TIMEIT(mes, code) \ */
+/*      do { \ */
+/*          uint64_t _s = counter_get(); \ */
+/*          code; \ */
+/*          uint64_t _e = counter_get(); \ */
+/*          uint64_t _res = _e - _s; \ */
+/*          printf("\t\tcounter - [%s]: %s is <%lu>\n", counter_get_name(), (mes), _res); \ */
+/*      } while(0) */
+
 #define TIMEIT(mes, code) \
-	do { \
-		uint64_t _s = counter_get(); \
-		code; \
-		uint64_t _e = counter_get(); \
-		uint64_t _res = _e - _s; \
-		printf("\t\tcounter - [%s]: %s is <%lu>\n", counter_get_name(), (mes), _res); \
-	} while(0)
+    do {                                                               \
+        uint64_t _s; rdtscll(_s);                                      \
+        code;                                                          \
+        uint64_t _e; rdtscll(_e);                                      \
+        uint64_t _res = _e - _s;                                       \
+        printf("\t\tcounter - [rdtscll]: %s is <%lu>\n", (mes), _res); \
+    } while(0)
+
+#define rdtscll(val)                                    \
+    do {                                                \
+        uint32_t hi, lo;                                \
+        __asm volatile("rdtsc" : "=a" (lo), "=d" (hi)); \
+        val = ((uint64_t)hi << 32) | lo;                \
+    } while (0);
+// see http://oliveryang.net/2015/09/pitfalls-of-TSC-usage/#2-why-using-tsc
 
 #endif

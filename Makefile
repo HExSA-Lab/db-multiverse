@@ -5,7 +5,7 @@ CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) -O0 -g
 CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) -O3 -msse2 -ffast-math #-funroll-loops
 LIBS:= -lperf
 LDFLAGS:= -L$(PWD)/lib $(LIBS) -Wl,-rpath=$(PWD)/lib
-SOURCES:=$(shell ls *.c)
+SOURCES:=$(shell find . -name '*.c' | grep -v './advanced_timing.c')
 
 all: main
 
