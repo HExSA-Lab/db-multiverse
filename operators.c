@@ -56,7 +56,7 @@ op_implementation_t default_impls[] = {
 		basic_rowise_selection_const, // SELECTION_CONST
 		NULL, // SELECTION_ATT
 		projection, // PROJECTION
-		countingsort,
+		countingmergesort,
 };
 
 const char * op_names[] = {
@@ -78,7 +78,7 @@ projection(col_table_t *t, size_t *pos, size_t num_proj)
 	printf("over ");
 	print_table_info(t);
 
-	TIMEIT("main loop",
+		TIMEIT("time: project",
 		for(size_t i = 0; i < t->num_chunks; i++)
 		{
 			table_chunk_t *tc = t->chunks[i];
@@ -103,6 +103,7 @@ projection(col_table_t *t, size_t *pos, size_t num_proj)
 			{
 				if(colRetained[j] == 0)
 				{
+					//DEBUG("Droping col %ld\n", j);
 					column_chunk_t *c = tc->columns[j];
 					free(c->data);
 					free(c);
@@ -111,9 +112,11 @@ projection(col_table_t *t, size_t *pos, size_t num_proj)
 
 			free(tc->columns);
 			tc->columns = new_columns;
+
+			free(colRetained);
 		}
 		t->num_cols = num_proj;
-	);
+		);
 
 	INFO(" => output table: ");
 	print_table_info(t);
@@ -279,7 +282,7 @@ basic_rowise_selection_const (col_table_t *t, size_t col, val_t val)
 	r->chunks[out_chunks - 1] = t_chunk;
 	size_t out_pos = 0;
 
-	TIMEIT("main loop",
+	TIMEIT("time: select",
 		for(size_t i = 0; i < t->num_chunks; i++)
 		{
 			table_chunk_t *tc = t->chunks[i];
@@ -477,15 +480,10 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
 void mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col);
 
 col_table_t *
-mergesort(col_table_t *in, size_t col, __attribute__((unused)) size_t domain_size)
-{
-	INFO("SORT\n");
-	INFO(" => input table:");
-	print_table_info(in);
-
+mergesort(col_table_t *in, size_t col, __attribute__((unused)) size_t domain_size) {
 	col_table_t* out = copy_col_table (in);
 
-	TIMEIT("actual sort",
+	TIMEIT("time: sort",
 		   mergesort_helper(in, 0, in->num_rows, out, col);
 	);
 
@@ -668,7 +666,7 @@ countingsort(col_table_t *in, size_t col, size_t domain_size)
 
 	col_table_t* out = create_col_table_like (in);
 
-	TIMEIT("actual sort",
+	TIMEIT("time: sort",
 		   countingsort_helper(in, 0, in->num_rows, out, col, domain_size);
 	);
 
@@ -789,7 +787,7 @@ mergecountingsort(col_table_t *in, size_t col, size_t domain_size)
 
 	col_table_t* out = copy_col_table (in);
 
-	TIMEIT("actual sort",
+	TIMEIT("time: sort",
 		   merge_counting_sort_helper(in, 0, in->num_rows, out, col, domain_size);
 	);
 
@@ -840,8 +838,8 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 	size_t num_cols = in->num_cols;
 	size_t num_rows = in->num_rows;
 
-	TIMEIT("actual sort",
-		   TIMEIT("counting-sort the subchunks",
+	TIMEIT("time: sort",
+		   TIMEIT("time: countingsort",
 				  for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
 					  table_chunk_t in_chunk = *in->chunks[chunk_no];
 					  table_chunk_t out_chunk = *out->chunks[chunk_no];
@@ -854,7 +852,7 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 				  col_table_t *tmp;
 				  SWAP(in, out, tmp);
 				  );
-		   TIMEIT("intra chunk merging",
+		   TIMEIT("time: intra-chunk merging",
 				  // in is sorted withinin subchunks of size sub_chunk
 				  for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
 					  table_chunk_t in_chunk = *in->chunks[chunk_no];
@@ -874,13 +872,13 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 				  }
 				  // in is sorted withinin chunks
 				  );
-		   TIMEIT("inter chunk merging",
+		   TIMEIT("time: inter-chunk merging",
 				  for(size_t width = chunk_size; width < num_chunks * chunk_size; width *= 2) {
 					  // in is sorted into runs of size width
 					  for(size_t start = 0; start < num_rows; start += 2 * width) {
 						  size_t mid = MIN(start + width, num_rows);
 						  size_t stop = MIN(start + 2 * width, num_rows);
-						  DEBUG("merge in[%ld:%ld], in[%ld:%ld] -> out[%ld:%ld]\n", start, mid, mid, stop, start, stop);
+						  //DEBUG("merge in[%ld:%ld], in[%ld:%ld] -> out[%ld:%ld]\n", start, mid, mid, stop, start, stop);
 						  merge(in, start, mid, stop, out, col);
 						  // 2 runs in in merge into 1 run in out
 					  }
@@ -916,24 +914,22 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, table_chunk_t out_chunk, size_t num_cols, size_t col, size_t domain_size) {
 	size_t row_count = stop - start;
 	if (row_count > 1) {
-		// each element of the row will be a pair of size_t's (table_chunk_t chunk, size_t chunk_offset);
-		// Note that copying a table_chunk_t is just copying a pointer to the column-data.
-		size_t row_size = row_count * sizeof(size_t);
-
 		// one row for every domain-element
-		void *array = malloc(domain_size * row_size);
-		MALLOC_NO_RET(array, "array");
+		/* table_chunk_t *chunk_array = NEWA(size_t, table_chunk_t); */
+		/* MALLOC_NO_RET(chunk_array, "chunk_array"); */
+		size_t *offset_array = NEWA(size_t, row_count * domain_size);
+		MALLOC_NO_RET(offset_array, "offset_array");
 
 		//DEBUG("array %p to %p, %ld rows, %ld cols, of size %ld bytes (%ld total)\n",
 		//array, array + domain_size * row_size, domain_size, row_count, sizeof(size_t), domain_size * row_size);
 
 		// array_starts holds the first position of each row.
-		void **array_starts = malloc(domain_size * sizeof(size_t));
-		void **array_ends   = malloc(domain_size * sizeof(size_t));
+		size_t **array_starts = NEWA(size_t*, domain_size);
+		size_t **array_ends   = NEWA(size_t*, domain_size);
 		for(size_t i = 0; i < domain_size; ++i) {
 			// row_size is measured in bytes, so cast to char**
-			array_starts[i] = &((char*) array)[row_size * i];
-			array_ends  [i] = &((char*) array)[row_size * i];
+			array_starts[i] = &offset_array[row_count * i];
+			array_ends  [i] = &offset_array[row_count * i];
 			//DEBUG("domain elem %ld starts at   %p\n", i, array_starts[i]);
 		}
 
@@ -941,8 +937,8 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 		// Filling the domain-element bucket with chunk_offsets
 		for(size_t chunk_offset = start; chunk_offset < stop; chunk_offset++) {
 			val_t domain_elem = col_data[chunk_offset];
-			*(size_t*) array_ends[domain_elem] = chunk_offset;
-			array_ends[domain_elem] += sizeof(size_t);
+			*array_ends[domain_elem] = chunk_offset;
+			array_ends[domain_elem] += sizeof(size_t*);
 		}
 
 		// Draining the domain-element buckets into output chunk
@@ -957,13 +953,13 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 				//DEBUG("domain element %d\n", cur_domain);
 			}
 
-			size_t in_chunk_offset = *(size_t*) array_starts[cur_domain];
+			size_t in_chunk_offset = *array_starts[cur_domain];
 			array_starts[cur_domain] += sizeof(size_t);
 
 			copy_row(in_chunk, in_chunk_offset, out_chunk, out_chunk_offset, num_cols);
 		}
 
-		free(array);
+		free(offset_array);
 		free(array_starts);
 		free(array_ends);
 	}

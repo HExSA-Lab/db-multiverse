@@ -56,9 +56,9 @@ defaultOptions (void)
 	o.chunksize = 1024 * 1024; // 4M values
 	o.table_type = COLUMN;
 	o.domain_size = 100;
-	o.repetitions = 1;
+	o.repetitions = 5;
 	o.impls = default_impls;
-    o.throwout = 0;
+    o.throwout = 1;
 	o.exp_str    = "scan";
     o.cntr_type = COUNTER_TYPE_GTOD;
     o.cntr_arg  = NULL;
@@ -168,7 +168,6 @@ driver (exp_options_t options)
     counter_start();
 
 	col_table_t *table = create_col_table(options.num_chunks, options.chunksize, options.num_cols, options.domain_size);
-	INFO("created input table(s)\n");
 
     counter_stop();
     counter_reset();
@@ -176,12 +175,16 @@ driver (exp_options_t options)
     counter_start();
 
 	col_table_t* copy = copy_col_table(table);
+
 	table = options.impls[SORT](table, 2, options.domain_size);
 
 	if (! check_sorted(table, 2, options.domain_size, copy)) {
 		ERROR("Not actually sorted!!\n");
 	}
+	free_col_table(copy);
+
 	table = options.impls[PROJECTION](table, proj, PROJ_SIZE);
+
 	table = options.impls[SELECTION_CONST](table, 1, 1);
 
     counter_stop();
@@ -407,17 +410,25 @@ int db_tests_main (int argc, char ** argv){
 
     counter_init(options.cntr_type, options.cntr_arg);
     
+	time_stuff = false;
+    for(size_t i = 0; i < options.throwout; i++)
+    {
+    	driver(options);
+    }
+
+	time_stuff = true;
     for(size_t i = 0; i < options.repetitions; i++)
     {
     	runtimes[i] = driver(options);
     }
 
     printf("\n\nCOUNTER VALS: [");
-    for(size_t i = options.throwout; i < options.repetitions; i++)
+    for(size_t i = 0; i < options.repetitions; i++)
     {
     	printf("%lu%s", runtimes[i], (i < options.repetitions - 1) ? ", ":  "");
     }
     printf("]\n\n");
+	free(runtimes);
 
     counter_deinit();
 

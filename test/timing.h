@@ -24,6 +24,7 @@
  */
 #ifdef __USER
 #include <stdint.h>
+#include <stdbool.h>
 #endif
 
 #ifdef __NAUTILUS__
@@ -118,13 +119,16 @@ const char * counter_get_name();
 /*          printf("\t\tcounter - [%s]: %s is <%lu>\n", counter_get_name(), (mes), _res); \ */
 /*      } while(0) */
 
+
+bool time_stuff;
+
 #define TIMEIT(mes, code) \
     do {                                                               \
         uint64_t _s; rdtscll(_s);                                      \
         code;                                                          \
         uint64_t _e; rdtscll(_e);                                      \
         uint64_t _res = _e - _s;                                       \
-        printf("\t\tcounter - [rdtscll]: %s is <%lu>\n", (mes), _res); \
+        printf("\t\tcounter: %s,%lu\n", (mes), _res);                  \
     } while(0)
 
 #define rdtscll(val)                                    \

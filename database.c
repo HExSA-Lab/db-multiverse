@@ -32,7 +32,7 @@ create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigne
 	t->chunks = NEWPA(table_chunk_t, num_chunks);
 	MALLOC_CHECK_NO_MES(t->chunks);
 
-	TIMEIT("create col table",
+	TIMEIT("time: create",
 		for(size_t i = 0; i < num_chunks; i++)
 		{
 			table_chunk_t *tc = NEW(table_chunk_t);
@@ -58,7 +58,7 @@ create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigne
 				}
 			}
 		}
-	);
+			   );
 
 	INFO("created table: ");
 	print_table_info(t);
@@ -73,20 +73,22 @@ free_col_chunk (column_chunk_t *c)
 	free(c);
 }
 
+inline void
+free_table_chunk(table_chunk_t *tc, size_t num_cols) {
+	for (size_t j = 0; j < num_cols; j++) {
+		column_chunk_t *c = tc->columns[j];
+		free_col_chunk(c);
+	}
+	free(tc->columns);
+	free(tc);
+}
+
 void
 free_col_table (col_table_t *t)
 {
 	for(size_t i = 0; i < t->num_chunks; i++) {
-		table_chunk_t * tc = t->chunks[i];
-
-		for (size_t j = 0; j < t->num_cols; j++)
-		{
-			column_chunk_t *c = tc->columns[j];
-			free_col_chunk(c);
-		}
-		free(tc);
+		free_table_chunk(t->chunks[i], t->num_cols);
 	}
-
 	free(t->chunks);
 	free(t);
 }
@@ -123,7 +125,7 @@ create_col_table_like (col_table_t *in) {
 	out->chunks = NEWPA(table_chunk_t, out->num_chunks);
 	MALLOC_CHECK(out->chunks, "chunks array");
 
-	TIMEIT("create col table",
+	TIMEIT("allocate table",
 		for(size_t chunk_no = 0; chunk_no < out->num_chunks; chunk_no++)
 		{
 			out->chunks[chunk_no] = NEW(table_chunk_t);
@@ -152,7 +154,7 @@ col_table_t *
 copy_col_table (col_table_t *in) {
 	col_table_t * out = create_col_table_like(in);
 
-	TIMEIT("copy col table",
+	TIMEIT("time: copy",
 		for(size_t chunk_no = 0; chunk_no < out->num_chunks; chunk_no++)
 		{
 			copy_table_chunk(*in->chunks[chunk_no], *out->chunks[chunk_no], in->num_cols);

@@ -10,6 +10,9 @@ SOURCES:=$(shell find . -name '*.c' | grep -v './advanced_timing.c')
 
 all: main
 
+run_data2: main
+	./main
+
 run_data: main
 	./main -t 5 -k 1 | tee /tmp/output | grep 'actual sort' | grep -oP '\d*' | ./mean > /tmp/output2 && cat /tmp/output && cat /tmp/output2
 
@@ -20,10 +23,13 @@ run: main
 	./main
 
 run_small: main
-	./main --chunksize 3 --numchunks 3
+	./main --chunksize 3 --numchunks 3 --throwout 0 --trials 1
 
 run_small_debug: main_debug
-	gdb -q main_debug -ex 'r --chunksize 3000 --numchunks 10'
+	gdb -q main_debug -ex 'r --chunksize 3000 --numchunks 10 --throwout 0 --trials 1'
+
+run_small_memcheck: main_debug
+	valgrind --leak-check=full ./main_debug --chunksize 3000 --numchunks 10 --throwout 0 --trials 1
 
 run_debug: main_debug
 	gdb -q main_debug -ex r
@@ -49,7 +55,7 @@ lib/libperf.so.0: lib/libperf.so.0.0.0
 	ln -s $(PWD)/lib/libperf.so.0.0.0 lib/libperf.so.0
 
 clean:
-	@rm -f main main_debug *.o *.o_debug sorting_runtimes.png
+	@rm -f main main_debug *.o *.o_debug test/*.o test/*.o_debug sorting_runtimes.png
 
 distclean: clean
 	@rm -f  lib/libperf.so.0 lib/libperf.so
