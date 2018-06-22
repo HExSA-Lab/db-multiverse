@@ -1,4 +1,5 @@
-#include <stdbool.h>
+#include <assert.h>
+#include <string.h>
 #include "common.h"
 #include "timing.h"
 #include "operators.h"
@@ -36,7 +37,7 @@ op_implementation_info_t impl_infos[] = {
 		{
 				SORT,
 				{"mergesort", "countingsort", "mergecountingsort", "countingmergesort", NULL},
-				{mergesort  ,  countingsort ,  mergecountingsort ,  countingmergesort , NULL},
+				{ mergesort ,  countingsort ,  mergecountingsort ,  countingmergesort , NULL},
 				4
 				// TODO: look into glibc/Python sort
 				// http://sourceware.org/git/?p=glibc.git;a=blob;f=stdlib/qsort.c;h=264a06b8a924a1627b3c0fd507a3e2ca38dbc8a0;hb=HEAD
@@ -48,7 +49,7 @@ op_implementation_t default_impls[] = {
 		basic_rowise_selection_const, // SELECTION_CONST
 		NULL, // SELECTION_ATT
 		projection, // PROJECTION
-		countingmergesort,
+		countingsort,
 };
 
 const char * op_names[] = {
@@ -495,16 +496,20 @@ compute_offset(size_t chunk_size, size_t row,
 
 void
 load_row(col_table_t *table, size_t chunk_size, size_t row, size_t column,
-		 size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t **chunk_col, val_t *val) {
+		 size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t **chunk_col, val_t *val, bool *done) {
 
 	// chunk_no and chunk_offset are always set such that they point to the row'th row.
 	// If chunk is provided, the chunk is set.
 	// If col is provided, col and val are set based on column.
 
 	compute_offset(chunk_size, row, chunk_no, chunk_offset);
-	*chunk = *table->chunks[*chunk_no];
-	*chunk_col = chunk->columns[column]->data;
-	*val = (*chunk_col)[*chunk_offset];
+	if (*chunk_no < table->num_chunks) {
+		*chunk = *table->chunks[*chunk_no];
+		*chunk_col = chunk->columns[column]->data;
+		*val = (*chunk_col)[*chunk_offset];
+	} else {
+		*done = true;
+	}
 }
 
 void
@@ -538,6 +543,7 @@ load_next_row(col_table_t *table, size_t chunk_size, size_t column,
 	}
 }
 
+// TODO: macro
 void
 copy_row(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_offset, size_t num_cols) {
 	for(size_t column = 0; column < num_cols; ++column) {
@@ -571,21 +577,30 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 	size_t chunk_size = get_chunk_size(in);
 	size_t num_cols = in->num_cols;
 
+	bool run1_empty = false;
+	bool run2_empty = false;
+
 	size_t run1_chunk_no;
 	size_t run1_chunk_offset;
 	table_chunk_t run1_chunk;
 	val_t *run1_col;
 	val_t run1_val;
 	load_row(in, chunk_size, start, col,
-			 &run1_chunk_no, &run1_chunk_offset, &run1_chunk, &run1_col, &run1_val);
+			 &run1_chunk_no, &run1_chunk_offset, &run1_chunk, &run1_col, &run1_val, &run1_empty);
 
 	size_t run2_chunk_no;
 	size_t run2_chunk_offset;
 	table_chunk_t run2_chunk;
 	val_t *run2_col;
 	val_t run2_val;
-	load_row(in, chunk_size, start, col,
-			 &run2_chunk_no, &run2_chunk_offset, &run2_chunk, &run2_col, &run2_val);
+	{
+		// This is not theoretically necessary, but GCC doesn't know that
+		run2_chunk.columns = NULL;
+		run2_col = NULL;
+		run2_val = 0;
+	}
+	load_row(in, chunk_size, mid, col,
+			 &run2_chunk_no, &run2_chunk_offset, &run2_chunk, &run2_col, &run2_val, &run2_empty);
 
 	size_t start_chunk_no;
 	size_t start_chunk_offset;
@@ -602,9 +617,6 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 	compute_offset(chunk_size, stop,
 				   &stop_chunk_no, &stop_chunk_offset);
 
-	bool run1_empty = false;
-	bool run2_empty = false;
-
 	size_t out_chunk_no = start_chunk_no;
 	size_t out_chunk_offset = start_chunk_offset;
 	for (; out_chunk_no < out->num_chunks; out_chunk_no++) {
@@ -612,21 +624,20 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 		// but I want to assert we have a valid record before the next statment:
 		table_chunk_t out_chunk = *out->chunks[out_chunk_no];
 
-		for (; out_chunk_offset < chunk_size; out_chunk_offset++) {
-			// iterate over the whole chunk
-
-			if (run1_empty && run2_empty) {
-				// but stop if we get out of data
-				goto done;
-			}
-
+		for (; out_chunk_offset < chunk_size && !(run1_empty && run2_empty); out_chunk_offset++) {
 			if (!run1_empty && (run2_empty || run1_val < run2_val)) {
+				/* DEBUG("copy %ld (run1) to %ld\n", */
+				/* 	  run1_chunk_no * chunk_size + run1_chunk_offset, */
+				/* 	   out_chunk_no * chunk_size +  out_chunk_offset); */
 				copy_row(run1_chunk, run1_chunk_offset, out_chunk, out_chunk_offset, num_cols);
 				load_next_row(in, chunk_size, col,
 							  &run1_chunk_no, &run1_chunk_offset, &run1_chunk, &run1_col, &run1_val);
 				// update whether or not run1 is empty
 				run1_empty = (run1_chunk_no == mid_chunk_no && run1_chunk_offset == mid_chunk_offset);
 			} else {
+				/* DEBUG("copy %ld (run2) to %ld\n", */
+				/* 	  run2_chunk_no * chunk_size + run2_chunk_offset, */
+				/* 	   out_chunk_no * chunk_size +  out_chunk_offset); */
 				copy_row(run2_chunk, run2_chunk_offset, out_chunk, out_chunk_offset, num_cols);
 				load_next_row(in, chunk_size, col,
 							  &run2_chunk_no, &run2_chunk_offset, &run2_chunk, &run2_col, &run2_val);
@@ -636,7 +647,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 		}
 		out_chunk_offset = 0;
 	}
- done: return;
+	return;
 }
 
 void countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col, size_t domain_size);
@@ -676,19 +687,18 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 
 	// one row for every domain-element
 	void *array = malloc(domain_size * row_size);
-	if(!array) {
-		DEBUG("malloc barf\n\n\n\n\n\n\n\n\n\n\n");
-		return;
-	}
+	MALLOC_NO_RET(array, "array");
 	//DEBUG("array %p to %p, %ld rows, each of %ld size\n", array, array + domain_size * row_size, row_count, row_size);
 
 	// array_starts holds the first position of each row.
 	void **array_starts = malloc(domain_size * sizeof(size_t));
+	MALLOC_NO_RET(array_starts, "array_starts");
 	void **array_ends = malloc(domain_size * sizeof(size_t));
+	MALLOC_NO_RET(array_ends, "array_ends");
 	for(size_t i = 0; i < domain_size; ++i) {
 		// row_size is measured in bytes, so cast to char**
-		array_starts[i] = &((char**) array)[row_size * i];
-		array_ends  [i] = &((char**) array)[row_size * i];
+		array_starts[i] = &((char*) array)[row_size * i];
+		array_ends  [i] = &((char*) array)[row_size * i];
 	}
 
 	size_t in_chunk_no;
@@ -708,15 +718,9 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 		val_t *col_data = in->chunks[in_chunk_no]->columns[col]->data;
 		//DEBUG("in %ld\n", in_chunk_no);
 
-		for(; in_chunk_offset < chunk_size; in_chunk_offset++) {
-			// iterate over the whole chunk
-
-			if(in_chunk_no == stop_chunk_no && in_chunk_offset == stop_chunk_offset) {
-				// but stop if we finish
-				goto done1;
-			}
-
+		for(; in_chunk_offset < chunk_size && !(in_chunk_no == stop_chunk_no && in_chunk_offset == stop_chunk_offset); in_chunk_offset++) {
 			val_t domain_elem = col_data[in_chunk_offset];
+			assert(domain_elem < domain_size);
 
 			*(table_chunk_t*) array_ends[domain_elem] = in_chunk;
 			array_ends[domain_elem] += sizeof(table_chunk_t);
@@ -732,7 +736,6 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 	size_t out_chunk_no;
 	size_t out_chunk_offset;
 
- done1:
 	compute_offset(chunk_size, start,
 				   &out_chunk_no, &out_chunk_offset);
 
@@ -742,20 +745,13 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 		table_chunk_t out_chunk = *out->chunks[out_chunk_no];
 		//DEBUG("out %ld\n", out_chunk_no);
 
-		for(; out_chunk_offset < chunk_size; out_chunk_offset++) {
-			// iterate over the whole chunk
-
-			if(out_chunk_no == stop_chunk_no && out_chunk_offset == stop_chunk_offset) {
-				// but stop if we finish
-				goto done2;
-			}
-
+		for(; out_chunk_offset < chunk_size && !(out_chunk_no == stop_chunk_no && out_chunk_offset == stop_chunk_offset); out_chunk_offset++) {
 			// If we have hit the frontier for this domain element, go on to the next one.
 			// Since I will run out of array elements at the same time as the out-position equals the stop-position,
 			// I shouldn't end up reading past the end of array_end
 			while(array_starts[cur_domain] == array_ends[cur_domain]) {
-				cur_domain++;
 				//DEBUG("domain element %d\n", cur_domain);
+				cur_domain++;
 			}
 
 			table_chunk_t lookup_chunk = *(table_chunk_t*) array_starts[cur_domain];
@@ -769,7 +765,6 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 		out_chunk_offset = 0;
 	}
 
- done2:
 	free(array);
 	free(array_starts);
 	free(array_ends);
@@ -796,7 +791,7 @@ mergecountingsort(col_table_t *in, size_t col, size_t domain_size)
 	return out;
 }
 
-const size_t switch_to_other_sort = 100;
+const size_t switch_to_other_sort = 10;
 
 void
 merge_counting_sort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col, size_t domain_size) {
@@ -804,13 +799,13 @@ merge_counting_sort_helper(col_table_t *in, size_t start, size_t stop, col_table
 	// PRECONDITION: multiset(in[start:stop]) == multiset(out[start:stop])
 
 	size_t len = stop - start;
-	if (stop - start >= switch_to_other_sort) {
+	if (len >= switch_to_other_sort) {
 		size_t mid = (start + stop) / 2;
 
 		// recurse
 		// Remember out[start:mid] has the same elements as in[start:mid].
-		mergesort_helper(out, start, mid , in, col); // in[start:mid] is sorted
-		mergesort_helper(out, mid  , stop, in, col); // in[stop :mid] is sorted
+		merge_counting_sort_helper(out, start, mid , in, col, domain_size); // in[start:mid] is sorted
+		merge_counting_sort_helper(out, mid  , stop, in, col, domain_size); // in[stop :mid] is sorted
 
 		// merge in[start:mid] with in[mid:stop], placing the result in out[start:stop], as desired.
 		merge(in, start, mid, stop, out, col);
@@ -848,43 +843,51 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 						  countingsort_intrachunk(in_chunk, start, stop, out_chunk, num_cols, col, domain_size);
 					  }
 				  }
+				  // make the output of counting-sort the input for merging
 				  col_table_t *tmp;
 				  SWAP(in, out, tmp);
 				  );
 		   TIMEIT("intra chunk merging",
+				  // in is sorted withinin subchunks of size sub_chunk
 				  for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
 					  table_chunk_t in_chunk = *in->chunks[chunk_no];
 					  table_chunk_t out_chunk = *out->chunks[chunk_no];
 					  for(size_t width = sub_chunk; width < chunk_size; width *= 2) {
+						  // in is sorted within subchunks of size width
 						  for(size_t start = 0; start < chunk_size; start += 2 * width) {
 							  size_t mid = MIN(start + width, chunk_size);
 							  size_t stop = MIN(start + 2 * width, chunk_size);
 							  merge_intrachunk(in_chunk, start, mid, stop, out_chunk, col, num_cols);
 						  }
-						  // since in[start:mid] and in[mid:stop] is merged into out[start:stop],
-						  // we want to merge out[start:stop] with out[start_prime:stop_prime]
-						  // in the next iteration.
+						  // out is sorted wihtin subchunks of size 2 * width
 						  col_table_t *tmp;
 						  SWAP(in, out, tmp);
+						  // in is sorted within subchunks of size 2 * width
 					  }
 				  }
+				  // in is sorted withinin chunks
 				  );
 		   TIMEIT("inter chunk merging",
 				  for(size_t width = chunk_size; width < num_chunks * chunk_size; width *= 2) {
+					  // in is sorted into runs of size width
 					  for(size_t start = 0; start < num_rows; start += 2 * width) {
 						  size_t mid = MIN(start + width, num_rows);
 						  size_t stop = MIN(start + 2 * width, num_rows);
-						  //DEBUG("merge in[%ld:%ld], in[%ld:%ld] -> out[%ld:%ld]\n", start, mid, mid, stop, start, stop);
+						  DEBUG("merge in[%ld:%ld], in[%ld:%ld] -> out[%ld:%ld]\n", start, mid, mid, stop, start, stop);
 						  merge(in, start, mid, stop, out, col);
+						  // 2 runs in in merge into 1 run in out
 					  }
-					  // since in[start:mid] and in[mid:stop] is merged into out[start:stop],
-					  // we want to merge out[start:stop] with out[start_prime:stop_prime]
-					  // in the next iteration.
+					  // out is sorted into runs of size 2 * width
 					  col_table_t *tmp;
 					  SWAP(in, out, tmp);
+					  // in is sorted into runs of size 2 * width
 				  }
 				  );
 	);
+
+	//in is sorted
+	col_table_t *tmp;
+	SWAP(in, out, tmp);
 
 	// there is no telling if this is the original 'in' because swapping happens
 	// just promise to use this like,
@@ -928,17 +931,20 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 		}
 
 		val_t *col_data = in_chunk.columns[col]->data;
-
+		// Filling the domain-element bucket with chunk_offsets
 		for(size_t chunk_offset = start; chunk_offset < stop; chunk_offset++) {
 			val_t domain_elem = col_data[chunk_offset];
-			//DEBUG("domain elem %d old ends at %p\n", domain_elem, array_ends[domain_elem]);
 			*(size_t*) array_ends[domain_elem] = chunk_offset;
 			array_ends[domain_elem] += sizeof(size_t);
-			//DEBUG("domain elem %d now ends at %p\n", domain_elem, array_ends[domain_elem]);
 		}
 
+		// Draining the domain-element buckets into output chunk
+		// TODO: use one pointer instead of one for every row for array_start
+		// TODO: loop over domain instead
 		val_t cur_domain = 0;
 		for(size_t out_chunk_offset = start; out_chunk_offset < stop; out_chunk_offset++) {
+
+			// Skip to domain bucket which is non-empty
 			while(array_starts[cur_domain] == array_ends[cur_domain]) {
 				cur_domain++;
 				//DEBUG("domain element %d\n", cur_domain);
@@ -958,6 +964,7 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 
 void
 merge_intrachunk(table_chunk_t in_chunk, size_t start, size_t mid, size_t stop, table_chunk_t out_chunk, size_t col, size_t num_cols) {
+	// TODO: indirect sort
 	bool run1_empty = false;
 	bool run2_empty = false;
 	val_t *data = in_chunk.columns[col]->data;
@@ -970,14 +977,56 @@ merge_intrachunk(table_chunk_t in_chunk, size_t start, size_t mid, size_t stop, 
 			copy_row(in_chunk, run1, out_chunk, out_chunk_offset, num_cols);
 			run1++;
 			run1_val = data[run1];
-			// update whether or not run1 is empty
 			run1_empty = (run1 == mid);
 		} else {
 			copy_row(in_chunk, run2, out_chunk, out_chunk_offset, num_cols);
 			run2++;
 			run2_val = data[run2];
-			// update whether or not run2 is empty
 			run2_empty = (run2 == stop);
 		}
 	}
+}
+
+size_t* domain_count(col_table_t *in, size_t col, size_t domain_size) {
+	size_t *domain_counts = malloc(domain_size * sizeof(size_t));
+	for(size_t domain_elem = 0; domain_elem < domain_size; ++domain_elem) {
+		domain_counts[domain_elem] = 0;
+	}
+
+	for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
+		val_t *data = in->chunks[chunk_no]->columns[col]->data;
+		for(size_t chunk_offset = 0; chunk_offset < get_chunk_size(in); ++chunk_offset) {
+			assert(data[chunk_offset] < domain_size);
+			domain_counts[data[chunk_offset]]++;
+		}
+	}
+	return domain_counts;
+}
+
+bool
+check_sorted(col_table_t *result, size_t col, size_t domain_size, col_table_t *copy) {
+	val_t last = 0;
+	size_t chunk_size = get_chunk_size(result);
+	for(size_t chunk_no = 0; chunk_no < result->num_chunks; ++chunk_no) {
+		val_t *data = result->chunks[chunk_no]->columns[col]->data;
+		for(size_t chunk_offset = 0; chunk_offset < chunk_size; ++chunk_offset) {
+			if(data[chunk_offset] < last) {
+				ERROR("Out of order");
+				return false;
+			}
+			last = data[chunk_offset];
+		}
+	}
+
+	size_t* count1 = domain_count(result, col, domain_size);
+	size_t* count2 = domain_count(copy, col, domain_size);
+	bool same = 0 == memcmp(count1, count2, domain_size * sizeof(size_t));
+	if (!same) {
+		ERROR("Non-bijective");
+	}
+
+	free(count1);
+	free(count2);
+
+	return same;
 }

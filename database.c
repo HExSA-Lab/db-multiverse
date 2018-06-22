@@ -160,8 +160,8 @@ copy_table_chunk(table_chunk_t in_chunk, table_chunk_t out_chunk, size_t num_col
 	size_t chunk_size = in_chunk.columns[0]->chunk_size;
 
 	for (size_t col = 0; col < num_cols; col++) {
-		memcpy(in_chunk.columns[col]->data,
-			   out_chunk.columns[col]->data,
+		memcpy(out_chunk.columns[col]->data,
+			   in_chunk.columns[col]->data,
 			   chunk_size * sizeof(val_t));
 	}
 }
@@ -187,4 +187,51 @@ new_copy_table_chunk(table_chunk_t in_chunk, size_t num_cols) {
 		copy_table_chunk(in_chunk, out_chunk, num_cols);
 	}
 	return out_chunk;
+}
+
+void
+print_strided_db(col_table_t* db) {
+	size_t chunk_size = get_chunk_size(db);
+	size_t num_cols = db->num_cols;
+	#define n_offsets 3
+	size_t offsets[n_offsets] = {0, chunk_size / 2, chunk_size - 1};
+
+	for(size_t chunk_no = 0; chunk_no < db->num_chunks; ++chunk_no) {
+		column_chunk_t** cols = db->chunks[chunk_no]->columns;
+		for(size_t i = 0; i < n_offsets; ++i) {
+			size_t offset = offsets[i];
+			size_t row = chunk_no * chunk_size + offset;
+			printf("row %10ld (%2ld, %9ld): ", row, chunk_no, offset);
+			for(size_t col = 0; col < num_cols; ++col) {
+				printf("%2d ", cols[col]->data[offset]);
+			}
+			printf("\n");
+		}
+	}
+}
+
+void
+print_full_db(col_table_t* db) {
+	size_t chunk_size = get_chunk_size(db);
+	size_t num_cols = db->num_cols;
+	size_t row = 0;
+
+	for(size_t chunk_no = 0; chunk_no < db->num_chunks; ++chunk_no) {
+		column_chunk_t** cols = db->chunks[chunk_no]->columns;
+		for(size_t offset = 0; offset < chunk_size; ++offset, ++row) {
+			printf("row %3ld (%2ld, %3ld): ", row, chunk_no, offset);
+			for(size_t col = 0; col < num_cols; ++col) {
+				printf("%2d ", cols[col]->data[offset]);
+			}
+			printf("\n");
+		}
+	}
+}
+
+void print_db(col_table_t* db) {
+	if(db->num_rows < 30) {
+		print_full_db(db);
+	} else {
+		print_strided_db(db);
+	}
 }

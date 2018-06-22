@@ -1,6 +1,7 @@
 #ifndef __OPERATORS_H__
 #define __OPERATORS_H__
 
+#include <stdbool.h>
 #include "database.h"
 
 typedef enum operator {
@@ -24,5 +25,7 @@ typedef struct op_implementation_info {
 extern op_implementation_info_t impl_infos[];
 extern op_implementation_t default_impls[];
 extern const char * op_names[];
+
+bool check_sorted(col_table_t *result, size_t col, size_t domain_size, col_table_t *copy);
 
 #endif

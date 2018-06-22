@@ -145,18 +145,25 @@ version (void)
 static uint64_t
 driver (exp_options_t options)
 {
-	size_t proj[] = { 0, 1, 2, 3 };
+	#define PROJ_SIZE 4
+	size_t proj[PROJ_SIZE] = { 0, 1, 2, 3 };
 
     counter_start();
 	col_table_t *table = create_col_table(options.num_chunks, options.chunksize, options.num_cols, options.domain_size);
 	INFO("created input table(s)\n");
+
     counter_stop();
     counter_reset();
 
     counter_start();
 
+	col_table_t* copy = copy_col_table(table);
 	table = options.impls[SORT](table, 2, options.domain_size);
-	table = options.impls[PROJECTION](table, proj, 4);
+
+	if (! check_sorted(table, 2, options.domain_size, copy)) {
+		ERROR("Not actually sorted!!\n");
+	}
+	table = options.impls[PROJECTION](table, proj, PROJ_SIZE);
 	table = options.impls[SELECTION_CONST](table, 1, 1);
 
     counter_stop();
