@@ -12,7 +12,8 @@
 val_t
 randVal(unsigned int domain_size)
 {
-	return (val_t) rand() % domain_size;
+	//return (val_t) rand() % domain_size;
+	return 0;
 }
 
 void

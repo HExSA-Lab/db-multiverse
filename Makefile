@@ -1,8 +1,9 @@
 CC:=gcc
 # INCLUDES:= -I. -Iinclude
 WARNINGS:= -Wall -Wextra
-CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) -O0 -g -D__USER
-CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) -O3 -msse2 -ffast-math  -D__USER
+CFLAGS_EXT:=-D__USER -std=c99
+CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) -O0 -g
+CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) -O3 -msse2 -ffast-math
 #-funroll-loops
 # LIBS:= -lperf
 LDFLAGS:= -L$(PWD)/lib $(LIBS) -Wl,-rpath=$(PWD)/lib

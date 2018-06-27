@@ -120,7 +120,7 @@ const char * counter_get_name();
 /*      } while(0) */
 
 
-bool time_stuff;
+extern bool time_stuff;
 
 #define TIMEIT(mes, code) \
     do {                                                               \
@@ -128,7 +128,9 @@ bool time_stuff;
         code;                                                          \
         uint64_t _e; rdtscll(_e);                                      \
         uint64_t _res = _e - _s;                                       \
-        printf("\t\tcounter: %s,%lu\n", (mes), _res);                  \
+        if (time_stuff) {                                              \
+            printf("\t\tcounter: %s, %lu\n", (mes), _res);             \
+        }                                                              \
     } while(0)
 
 #define rdtscll(val)                                    \

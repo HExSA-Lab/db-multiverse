@@ -2,6 +2,7 @@
 #include <time.h>
 #include <string.h>
 #include <getopt.h>
+#include <stdlib.h>
 #endif
 
 #ifdef __NAUTILUS__
@@ -56,7 +57,7 @@ defaultOptions (void)
 	o.chunksize = 1024 * 1024; // 4M values
 	o.table_type = COLUMN;
 	o.domain_size = 100;
-	o.repetitions = 5;
+	o.repetitions = 15;
 	o.impls = default_impls;
     o.throwout = 1;
 	o.exp_str    = "scan";
@@ -409,7 +410,8 @@ int db_tests_main (int argc, char ** argv){
     runtimes = NEWA(time_int, options.repetitions);
 
     counter_init(options.cntr_type, options.cntr_arg);
-    
+
+	// disable timing output, so that script doesn't pick up these timer vals
 	time_stuff = false;
     for(size_t i = 0; i < options.throwout; i++)
     {
