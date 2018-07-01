@@ -19,7 +19,7 @@ randVal(unsigned int domain_size)
 void
 print_table_info (col_table_t *t)
 {
-	printf("Table with %lu columns, %lu rows, and %lu chunks\n", t->num_cols, t->num_rows, t->num_chunks);
+	INFO("Table with %lu columns, %lu rows, and %lu chunks\n", t->num_cols, t->num_rows, t->num_chunks);
 }
 
 col_table_t *

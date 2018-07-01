@@ -2,7 +2,7 @@ CC:=gcc
 # INCLUDES:= -I. -Iinclude
 WARNINGS:= -Wall -Wextra
 CFLAGS_EXT:=-D__USER -std=c99
-CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) -O0 -g
+CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) -O0 -g -DVERBOSE
 CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) -O3 -msse2 -ffast-math
 #-funroll-loops
 # LIBS:= -lperf
@@ -10,9 +10,6 @@ LDFLAGS:= -L$(PWD)/lib $(LIBS) -Wl,-rpath=$(PWD)/lib
 SOURCES:=$(shell find . -name '*.c' | grep -v './advanced_timing.c')
 
 all: main
-
-run_data2: main
-	./main
 
 run_data: main
 	./main -t 5 -k 1 | tee /tmp/output | grep 'actual sort' | grep -oP '\d*' | ./mean > /tmp/output2 && cat /tmp/output && cat /tmp/output2

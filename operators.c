@@ -73,9 +73,9 @@ projection(col_table_t *t, size_t *pos, size_t num_proj)
 	INFO("PROJECTION on columns ");
 	for (size_t i = 0; i < num_proj; i++)
 	{
-		printf("%lu%s", pos[i], (i < num_proj - 1) ? ", " : " ");
+		INFO("%lu%s", pos[i], (i < num_proj - 1) ? ", " : " ");
 	}
-	printf("over ");
+	INFO("over ");
 	print_table_info(t);
 
 		TIMEIT("time: project",
@@ -137,7 +137,7 @@ selection_const (col_table_t *t, size_t col, val_t val)
 	size_t out_chunks = 1;
 
 	INFO("SELECTION[col] on column %lu = %u",  col, val);
-	printf(" over ");
+	INFO(" over ");
 	print_table_info(t);
 
 	r->num_cols = t->num_cols;

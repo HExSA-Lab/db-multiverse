@@ -54,10 +54,10 @@ defaultOptions (void)
 
 	o.num_chunks = 10;
 	o.num_cols   = 10;
-	o.chunksize = 1024 * 1024; // 4M values
+	o.chunksize = 1024 * 1024;
 	o.table_type = COLUMN;
 	o.domain_size = 100;
-	o.repetitions = 15;
+	o.repetitions = 10;
 	o.impls = default_impls;
     o.throwout = 1;
 	o.exp_str    = "scan";
@@ -424,12 +424,12 @@ int db_tests_main (int argc, char ** argv){
     	runtimes[i] = driver(options);
     }
 
-    printf("\n\nCOUNTER VALS: [");
-    for(size_t i = 0; i < options.repetitions; i++)
-    {
-    	printf("%lu%s", runtimes[i], (i < options.repetitions - 1) ? ", ":  "");
-    }
-    printf("]\n\n");
+    /* printf("\n\nCOUNTER VALS: ["); */
+    /* for(size_t i = 0; i < options.repetitions; i++) */
+    /* { */
+    /* 	printf("%lu%s", runtimes[i], (i < options.repetitions - 1) ? ", ":  ""); */
+    /* } */
+    /* printf("]\n\n"); */
 	free(runtimes);
 
     counter_deinit();

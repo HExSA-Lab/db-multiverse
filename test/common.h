@@ -34,9 +34,15 @@
 #include <nautilus/libccompat.h>
 #endif
 
-#define INFO(fmt, args...)  printf("DB-MV: " fmt, ##args)
-#define DEBUG(fmt, args...) printf("DB-MB DBG: " fmt, ##args)
-#define ERROR(fmt, args...) printf("DB-MB ERR: " fmt, ##args)
+#ifdef VERBOSE
+	#define INFO(fmt, args...)  printf("DB-MV: " fmt, ##args)
+	#define DEBUG(fmt, args...) printf("DB-MB DBG: " fmt, ##args)
+	#define ERROR(fmt, args...) printf("DB-MB ERR: " fmt, ##args)
+#else
+	#define INFO(fmt, args...) 
+	#define DEBUG(fmt, args...)
+	#define ERROR(fmt, args...)
+#endif
 
 #define NEW(typ)  ((typ *) malloc(sizeof(typ)))
 #define NEWZ(typ) ((typ *) calloc(1, sizeof(typ)))
