@@ -1,37 +1,35 @@
 CC:=gcc
-# INCLUDES:= -I. -Iinclude
-WARNINGS:= -Wall -Wextra
-CFLAGS_EXT:=-D__USER -std=gnu99 -DNDEBUG -fgnu89-inline -m64 -fno-common
-# from nautilus/Makefile COMMON_FLAGS
-NAUT_COMMON_FLAGS :=            -O2 \
-			   -fno-omit-frame-pointer \
-			   -fno-stack-protector \
-			   -fno-strict-aliasing \
-                           -fno-strict-overflow \
-                           -fno-delete-null-pointer-checks \
-			   -mno-red-zone \
-		   -mno-sse2 \
-			   -mcmodel=large
+WFLAGS:= -Wall -Wextra
+IFLAGS:=-I./include/
 
-
-CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) -Og -g -DVERBOSE
-CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) $(NAUT_COMMON_FLAGS) -g
-# -msse2 -ffast-math
-#-funroll-loops
-# LIBS:= -lperf
-LDFLAGS:= -L$(PWD)/lib $(LIBS) -Wl,-rpath=$(PWD)/lib
-SOURCES:=$(shell find . -name '*.c' | grep -v './advanced_timing.c')
+# from nautilus/Makefile
+CFLAGS_NAUT := -O2 \
+               -fno-omit-frame-pointer \
+               -fno-stack-protector \
+               -fno-strict-aliasing \
+               -fno-strict-overflow \
+               -fno-delete-null-pointer-checks \
+               -mno-red-zone \
+               -mno-sse2 \
+               -mcmodel=large \
+               -fno-common \
+               -Wstrict-overflow=5 \
+               -fgnu89-inline \
+               -g \
+               -m64
+CFLAGS_DBG:=$(IFLAGS) $(WFLAGS) -Og -g
+CFLAGS_OPT:=$(IFLAGS) $(WFLAGS) $(CFLAGS_NAUT) -DNDEBUG
+SOURCES:=$(shell find src/ -name '*.c' -printf '%P\n')
+OBJECTS:=$(addprefix build/,$(SOURCES:.c=.o))
+OBJECTS_DBG:=$(addprefix build/,$(SOURCES:.c=.o_debug))
 
 all: main
 
-run_data: main
-	./main -t 5 -k 1 | tee /tmp/output | grep 'actual sort' | grep -oP '\d*' | ./mean > /tmp/output2 && cat /tmp/output && cat /tmp/output2
-
-sorting_runtimes.png: sorting_runtimes.py README.md
-	./sorting_runtimes.py
-
 run: main
 	./main
+
+run_debug: main_debug
+	gdb -q main_debug -ex r
 
 run_small: main
 	./main --chunksize 3 --numchunks 3 --throwout 0 --trials 1
@@ -42,20 +40,17 @@ run_small_debug: main_debug
 run_small_memcheck: main_debug
 	valgrind --leak-check=full --show-leak-kinds=all ./main_debug --chunksize 3000 --numchunks 10 --throwout 0 --trials 1
 
-run_debug: main_debug
-	gdb -q main_debug -ex r
-
-%.o_debug: %.c
+build/%.o_debug: src/%.c
 	$(CC) $(CFLAGS_DBG) -c -o $@ $<
 
-%.o: %.c
+build/%.o: src/%.c
 	$(CC) $(CFLAGS_OPT) -c -o $@ $<
 
-main_debug: $(SOURCES:.c=.o_debug) libs
-	$(CC) $(LDFLAGS) -o $@ $(SOURCES:.c=.o_debug)
+main_debug: $(OBJECTS_DEBUG)
+	$(CC) $(LDFLAGS) -o $@ $^
 
-main: $(SOURCES:.c=.o) libs
-	$(CC) $(LDFLAGS) -o $@ $(SOURCES:.c=.o)
+main: $(OBJECTS)
+	$(CC) $(LDFLAGS) -o $@ $^
 
 libs: lib/libperf.so.0 lib/libperf.so
 
@@ -66,7 +61,8 @@ lib/libperf.so.0: lib/libperf.so.0.0.0
 	ln -s $(PWD)/lib/libperf.so.0.0.0 lib/libperf.so.0
 
 clean:
-	@rm -f main main_debug *.o *.o_debug test/*.o test/*.o_debug sorting_runtimes.png
+	@rm -rf main main_debug build
+	mkdir -p build/database
 
 distclean: clean
 	@rm -f  lib/libperf.so.0 lib/libperf.so

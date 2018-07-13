@@ -4,8 +4,7 @@
 	#include <string.h>
 #endif
 
-#include "app/database.h"
-#include "app/timing.h"
+#include "database/database.h"
 
 
 // rand() is very slow in Nautilus, so I roll my own.
@@ -13,21 +12,19 @@
 uint32_t x = 0;
 uint32_t a = 1664525;
 uint32_t c = 1013904223;
-#define MY_RAND_MAX ((1U << 32) - 1)
 val_t randVal(unsigned int domain_size) {
-	x = (a * x + c) & MY_RAND_MAX;
+	x = (a * x + c);
+	// overflow is modulus
 	return (val_t) (x % domain_size);
 }
 
 void
-print_table_info (col_table_t *t)
-{
-	INFO("Table with %lu columns, %lu rows, and %lu chunks\n", t->num_cols, t->num_rows, t->num_chunks);
+print_table_info (col_table_t *t) {
+	printf("Table with %lu columns, %lu rows, and %lu chunks\n", t->num_cols, t->num_rows, t->num_chunks);
 }
 
 col_table_t *
-create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigned int domain_size)
-{
+create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigned int domain_size) {
 	col_table_t * t = NEW(col_table_t);
 	t->num_chunks = num_chunks;
 	t->num_cols = num_cols;
@@ -36,43 +33,33 @@ create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigne
 	t->chunks = NEWPA(table_chunk_t, num_chunks);
 	MALLOC_CHECK_NO_MES(t->chunks);
 
-	TIMEIT("time: create",
-		for(size_t i = 0; i < num_chunks; i++)
-		{
-			table_chunk_t *tc = NEW(table_chunk_t);
-			MALLOC_CHECK(tc, "table chunks");
+	for(size_t i = 0; i < num_chunks; i++) {
+		table_chunk_t *tc = NEW(table_chunk_t);
+		MALLOC_CHECK(tc, "table chunks");
 
-			t->chunks[i] = tc;
-			tc->columns = NEWPA(column_chunk_t, num_cols);
-			MALLOC_CHECK_NO_MES(tc->columns);
+		t->chunks[i] = tc;
+		tc->columns = NEWPA(column_chunk_t, num_cols);
+		MALLOC_CHECK_NO_MES(tc->columns);
 
-			for (size_t j = 0; j < num_cols; j++)
-			{
-				column_chunk_t *c = NEW(column_chunk_t);
-				MALLOC_CHECK(c, "column chunks");
+		for (size_t j = 0; j < num_cols; j++) {
+			column_chunk_t *c = NEW(column_chunk_t);
+			MALLOC_CHECK(c, "column chunks");
 
-				tc->columns[j] = c;
-				c->chunk_size = chunk_size;
-				c->data = NEWA(val_t, chunk_size);
-				MALLOC_CHECK(c->data, "chunk data");
+			tc->columns[j] = c;
+			c->chunk_size = chunk_size;
+			c->data = NEWA(val_t, chunk_size);
+			MALLOC_CHECK(c->data, "chunk data");
 
-				for(size_t k = 0; k < chunk_size; k++)
-				{
-					c->data[k] = randVal(domain_size);
-				}
+			for(size_t k = 0; k < chunk_size; k++) {
+				c->data[k] = randVal(domain_size);
 			}
 		}
-	);
-
-	INFO("created table: ");
-	print_table_info(t);
-
+	}
 	return t;
 }
 
 inline void
-free_col_chunk (column_chunk_t *c)
-{
+free_col_chunk (column_chunk_t *c) {
 	free(c->data);
 	free(c);
 }
@@ -129,27 +116,23 @@ create_col_table_like (col_table_t *in) {
 	out->chunks = NEWPA(table_chunk_t, out->num_chunks);
 	MALLOC_CHECK(out->chunks, "chunks array");
 
-	TIMEIT("allocate table",
-		for(size_t chunk_no = 0; chunk_no < out->num_chunks; chunk_no++)
-		{
-			out->chunks[chunk_no] = NEW(table_chunk_t);
-			MALLOC_CHECK(out->chunks[chunk_no], "chunk");
+	for(size_t chunk_no = 0; chunk_no < out->num_chunks; chunk_no++) {
+		out->chunks[chunk_no] = NEW(table_chunk_t);
+		MALLOC_CHECK(out->chunks[chunk_no], "chunk");
 
-			out->chunks[chunk_no]->columns = NEWPA(column_chunk_t, out->num_cols);
-			MALLOC_CHECK(out->chunks[chunk_no]->columns, "columns array");
+		out->chunks[chunk_no]->columns = NEWPA(column_chunk_t, out->num_cols);
+		MALLOC_CHECK(out->chunks[chunk_no]->columns, "columns array");
 
-			for (size_t col = 0; col < out->num_cols; col++)
-			{
-				out->chunks[chunk_no]->columns[col] = NEW(column_chunk_t);
-				MALLOC_CHECK(out->chunks[chunk_no]->columns[col], "column");
+		for (size_t col = 0; col < out->num_cols; col++) {
+			out->chunks[chunk_no]->columns[col] = NEW(column_chunk_t);
+			MALLOC_CHECK(out->chunks[chunk_no]->columns[col], "column");
 
-				out->chunks[chunk_no]->columns[col]->chunk_size = chunk_size;
+			out->chunks[chunk_no]->columns[col]->chunk_size = chunk_size;
 
-				out->chunks[chunk_no]->columns[col]->data = NEWA(val_t, chunk_size);
-				MALLOC_CHECK(out->chunks[chunk_no]->columns[col]->data, "column data");
-			}
+			out->chunks[chunk_no]->columns[col]->data = NEWA(val_t, chunk_size);
+			MALLOC_CHECK(out->chunks[chunk_no]->columns[col]->data, "column data");
 		}
-	);
+	}
 
 	return out;
 }
@@ -157,15 +140,15 @@ create_col_table_like (col_table_t *in) {
 col_table_t *
 copy_col_table (col_table_t *in) {
 	col_table_t * out = create_col_table_like(in);
-
-	TIMEIT("time: copy",
-		for(size_t chunk_no = 0; chunk_no < out->num_chunks; chunk_no++)
-		{
-			copy_table_chunk(*in->chunks[chunk_no], *out->chunks[chunk_no], in->num_cols);
-		}
-	);
-
+	copy_col_table_noalloc(in, out);
 	return out;
+}
+
+inline void
+copy_col_table_noalloc(col_table_t* in, col_table_t* out) {
+	for(size_t chunk_no = 0; chunk_no < out->num_chunks; chunk_no++) {
+		copy_table_chunk(*in->chunks[chunk_no], *out->chunks[chunk_no], in->num_cols);
+	}
 }
 
 inline void
@@ -173,7 +156,6 @@ copy_table_chunk(table_chunk_t in_chunk, table_chunk_t out_chunk, size_t num_col
 	size_t chunk_size = in_chunk.columns[0]->chunk_size;
 
 	for (size_t col = 0; col < num_cols; col++) {
-
 		memcpy(out_chunk.columns[col]->data,
 			   in_chunk.columns[col]->data,
 			   chunk_size * sizeof(val_t));
@@ -203,11 +185,12 @@ new_copy_table_chunk(table_chunk_t in_chunk, size_t num_cols) {
 	return out_chunk;
 }
 
+
 void
 print_strided_db(col_table_t* db) {
 	size_t chunk_size = get_chunk_size(db);
 	size_t num_cols = db->num_cols;
-	#define n_offsets 3
+#define n_offsets 3
 	size_t offsets[n_offsets] = {0, chunk_size / 2, chunk_size - 1};
 
 	for(size_t chunk_no = 0; chunk_no < db->num_chunks; ++chunk_no) {

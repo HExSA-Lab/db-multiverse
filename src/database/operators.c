@@ -5,9 +5,8 @@
 	#include <string.h>
 #endif
 
-#include "app/common.h"
-#include "app/timing.h"
-#include "app/operators.h"
+#include "database/common.h"
+#include "database/operators.h"
 
 // function declarations
 col_table_t *projection(col_table_t *t, size_t *pos, size_t num_proj);
@@ -66,58 +65,40 @@ const char * op_names[] = {
 
 // projection only changes the schema
 col_table_t *
-projection(col_table_t *t, size_t *pos, size_t num_proj)
-{
-	INFO("PROJECTION on columns ");
-	for (size_t i = 0; i < num_proj; i++)
-	{
-		INFO("%lu%s", pos[i], (i < num_proj - 1) ? ", " : " ");
-	}
-	INFO("over ");
-	print_table_info(t);
+projection(col_table_t *t, size_t *pos, size_t num_proj) {
+	for(size_t i = 0; i < t->num_chunks; i++) {
+		table_chunk_t *tc = t->chunks[i];
+		column_chunk_t **new_columns = NEWPA(column_chunk_t, num_proj);
 
-		TIMEIT("time: project",
-		for(size_t i = 0; i < t->num_chunks; i++)
-		{
-			table_chunk_t *tc = t->chunks[i];
-			column_chunk_t **new_columns = NEWPA(column_chunk_t, num_proj);
+		MALLOC_CHECK_NO_MES(new_columns);
 
-			MALLOC_CHECK_NO_MES(new_columns);
+		unsigned char *colRetained = NEWA(unsigned char, t->num_cols);
 
-			unsigned char *colRetained = NEWA(unsigned char, t->num_cols);
+		MALLOC_CHECK_NO_MES(colRetained);
 
-			MALLOC_CHECK_NO_MES(colRetained);
+		for(size_t j = 0; j < t->num_cols; j++)
+			colRetained[j] = 0;
 
-			for(size_t j = 0; j < t->num_cols; j++)
-				colRetained[j] = 0;
-
-			for(size_t j = 0; j < num_proj; j++)
-			{
-				new_columns[j] = tc->columns[pos[j]];
-				colRetained[pos[j]] = 1;
-			}
-
-			for(size_t j = 0; j < t->num_cols; j++)
-			{
-				if(colRetained[j] == 0)
-				{
-					//DEBUG("Droping col %ld\n", j);
-					column_chunk_t *c = tc->columns[j];
-					free(c->data);
-					free(c);
-				}
-			}
-
-			free(tc->columns);
-			tc->columns = new_columns;
-
-			free(colRetained);
+		for(size_t j = 0; j < num_proj; j++) {
+			new_columns[j] = tc->columns[pos[j]];
+			colRetained[pos[j]] = 1;
 		}
-		t->num_cols = num_proj;
-		);
 
-	INFO(" => output table: ");
-	print_table_info(t);
+		for(size_t j = 0; j < t->num_cols; j++) {
+			if(colRetained[j] == 0) {
+				//DEBUG("Droping col %ld\n", j);
+				column_chunk_t *c = tc->columns[j];
+				free(c->data);
+				free(c);
+			}
+		}
+
+		free(tc->columns);
+		tc->columns = new_columns;
+
+		free(colRetained);
+	}
+	t->num_cols = num_proj;
 
 	return t;
 }
@@ -125,18 +106,13 @@ projection(col_table_t *t, size_t *pos, size_t num_proj)
 #define UNROLL_SIZE 1028
 
 col_table_t *
-selection_const (col_table_t *t, size_t col, val_t val)
-{
+selection_const (col_table_t *t, size_t col, val_t val) {
 	col_table_t *r = NEW(col_table_t);
 	column_chunk_t *c_chunk;
 	table_chunk_t *t_chunk;
 	size_t total_results = 0;
 	size_t chunk_size = t->chunks[0]->columns[0]->chunk_size;
 	size_t out_chunks = 1;
-
-	INFO("SELECTION[col] on column %lu = %u",  col, val);
-	INFO(" over ");
-	print_table_info(t);
 
 	r->num_cols = t->num_cols;
 	r->num_chunks = 1;
@@ -150,8 +126,7 @@ selection_const (col_table_t *t, size_t col, val_t val)
 	t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
 	MALLOC_CHECK_NO_MES(t_chunk->columns);
 
-	for(size_t i = 0; i < t->num_cols; i++)
-	{
+	for(size_t i = 0; i < t->num_cols; i++) {
 		t_chunk->columns[i] = NEW(column_chunk_t);
 		MALLOC_CHECK_NO_MES(t_chunk->columns[i]);
 		c_chunk = t_chunk->columns[i];
@@ -161,25 +136,21 @@ selection_const (col_table_t *t, size_t col, val_t val)
 	r->chunks[out_chunks - 1] = t_chunk;
 	size_t out_pos = 0;
 
-	for(size_t i = 0; i < t->num_chunks; i++)
-	{
+	for(size_t i = 0; i < t->num_chunks; i++) {
 		table_chunk_t *tc = t->chunks[i];
 		column_chunk_t *c = tc->columns[col];
 		val_t *outdata = NULL, *outstart = NULL;
 		val_t *indata = c->data;
 		val_t *instart = indata;
 
-		for(size_t j = 0; j < t->num_cols; j++)
-		{
+		for(size_t j = 0; j < t->num_cols; j++) {
 			outdata = t_chunk->columns[j]->data + out_pos;
 			outstart = outdata;
 			size_t count_results = (j == 0);
 
-			while((indata + UNROLL_SIZE < instart + chunk_size) && (outdata + UNROLL_SIZE < outstart + - out_pos + chunk_size))
-			{
+			while((indata + UNROLL_SIZE < instart + chunk_size) && (outdata + UNROLL_SIZE < outstart + - out_pos + chunk_size)) {
 				// tight loop with compile time constant of iterations
-				for(int k = 0; k < UNROLL_SIZE; k++)
-				{
+				for(int k = 0; k < UNROLL_SIZE; k++) {
 					int match = (*indata == val);
 					*outdata = *indata;
 					indata++;
@@ -191,18 +162,15 @@ selection_const (col_table_t *t, size_t col, val_t val)
 
 		out_pos = outdata - outstart;
 
-		while(indata < instart + chunk_size)
-		{
-			if (out_pos == chunk_size)
-			{
+		while(indata < instart + chunk_size) {
+			if (out_pos == chunk_size) {
 				t_chunk =  NEW(table_chunk_t);
 				MALLOC_CHECK_NO_MES(t_chunk);
 
 				t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
 				MALLOC_CHECK_NO_MES(t_chunk->columns);
 
-				for(size_t j = 0; j < t->num_cols; j++)
-				{
+				for(size_t j = 0; j < t->num_cols; j++) {
 					t_chunk->columns[j] = NEW(column_chunk_t);
 					MALLOC_CHECK_NO_MES(t_chunk->columns[j]);
 
@@ -218,11 +186,9 @@ selection_const (col_table_t *t, size_t col, val_t val)
 			int match = (*indata == val);
 			indata++;
 
-			if (match)
-			{
+			if (match) {
 				total_results++;
-				for(size_t j = 0; j < t->num_cols; j++)
-				{
+				for(size_t j = 0; j < t->num_cols; j++) {
 					outdata = t_chunk->columns[j]->data + out_pos;
 					*outdata = *indata;
 					outdata += match;
@@ -236,27 +202,19 @@ selection_const (col_table_t *t, size_t col, val_t val)
 
 	r->num_rows = total_results;
 
-	INFO(" => output table: ");
-	print_table_info(r);
-
 	free_col_table(t);
 
     return r;
 }
 
 col_table_t *
-basic_rowise_selection_const (col_table_t *t, size_t col, val_t val)
-{
+basic_rowise_selection_const (col_table_t *t, size_t col, val_t val) {
 	col_table_t *r = NEW(col_table_t);
 	column_chunk_t *c_chunk;
 	table_chunk_t *t_chunk;
 	size_t total_results = 0;
 	size_t chunk_size = t->chunks[0]->columns[0]->chunk_size;
 	size_t out_chunks = 1;
-
-	INFO("SELECTION[rowwise] on column %lu = %u",  col, val);
-	INFO(" over ");
-	print_table_info(t);
 
 	r->num_cols = t->num_cols;
 	r->num_chunks = 1;
@@ -269,8 +227,7 @@ basic_rowise_selection_const (col_table_t *t, size_t col, val_t val)
 	t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
 	MALLOC_CHECK_NO_MES(t_chunk->columns);
 
-	for(size_t i = 0; i < t->num_cols; i++)
-	{
+	for(size_t i = 0; i < t->num_cols; i++) {
 		t_chunk->columns[i] = NEW(column_chunk_t);
 		MALLOC_CHECK_NO_MES(t_chunk->columns[i]);
 		c_chunk = t_chunk->columns[i];
@@ -280,63 +237,52 @@ basic_rowise_selection_const (col_table_t *t, size_t col, val_t val)
 	r->chunks[out_chunks - 1] = t_chunk;
 	size_t out_pos = 0;
 
-	TIMEIT("time: select",
-		for(size_t i = 0; i < t->num_chunks; i++)
-		{
-			table_chunk_t *tc = t->chunks[i];
-			column_chunk_t *c = tc->columns[col];
-			val_t *outdata;
-			val_t *indata = c->data;
-			val_t *instart = indata;
+	for(size_t i = 0; i < t->num_chunks; i++) {
+		table_chunk_t *tc = t->chunks[i];
+		column_chunk_t *c = tc->columns[col];
+		val_t *outdata;
+		val_t *indata = c->data;
+		val_t *instart = indata;
 
-			while(indata < instart + chunk_size)
-			{
-				if (out_pos == chunk_size)
-				{
-					t_chunk =  NEW(table_chunk_t);
-					MALLOC_CHECK_NO_MES(t_chunk);
+		while(indata < instart + chunk_size) {
+			if (out_pos == chunk_size) {
+				t_chunk =  NEW(table_chunk_t);
+				MALLOC_CHECK_NO_MES(t_chunk);
 
-					t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
-					MALLOC_CHECK_NO_MES(t_chunk->columns);
+				t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
+				MALLOC_CHECK_NO_MES(t_chunk->columns);
 
-					for(size_t j = 0; j < t->num_cols; j++)
-					{
-						t_chunk->columns[j] = NEW(column_chunk_t);
-						MALLOC_CHECK_NO_MES(t_chunk->columns[j]);
+				for(size_t j = 0; j < t->num_cols; j++) {
+					t_chunk->columns[j] = NEW(column_chunk_t);
+					MALLOC_CHECK_NO_MES(t_chunk->columns[j]);
 
-						c_chunk = t_chunk->columns[j];
-						c_chunk->data = NEWA(val_t, chunk_size);
-						MALLOC_CHECK_NO_MES(c_chunk->data);
-					}
-					r->chunks[r->num_chunks] = t_chunk;
-					r->num_chunks++;
-					out_pos = 0;
+					c_chunk = t_chunk->columns[j];
+					c_chunk->data = NEWA(val_t, chunk_size);
+					MALLOC_CHECK_NO_MES(c_chunk->data);
 				}
+				r->chunks[r->num_chunks] = t_chunk;
+				r->num_chunks++;
+				out_pos = 0;
+			}
 
-				uint8_t match = (*indata == val);
-				indata++;
+			uint8_t match = (*indata == val);
+			indata++;
 
-				if (match)
-				{
-					total_results++;
-					for(size_t j = 0; j < t->num_cols; j++)
-					{
-						outdata = t_chunk->columns[j]->data + out_pos;
-						*outdata = *indata;
-						outdata += match;
-					}
-					out_pos++;
+			if(match) {
+				total_results++;
+				for(size_t j = 0; j < t->num_cols; j++) {
+					outdata = t_chunk->columns[j]->data + out_pos;
+					*outdata = *indata;
+					outdata += match;
 				}
-
+				out_pos++;
 			}
 
 		}
-	);
+
+	}
 
 	r->num_rows = total_results;
-
-	INFO(" => output table: ");
-	print_table_info(r);
 
 	free_col_table(t);
 
@@ -344,8 +290,7 @@ basic_rowise_selection_const (col_table_t *t, size_t col, val_t val)
 }
 
 col_table_t *
-scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
-{
+scatter_gather_selection_const (col_table_t *t, size_t col, val_t val) {
 	table_chunk_t *t_chunk;
 	size_t total_results = 0;
 	size_t chunk_size = t->chunks[0]->columns[0]->chunk_size;
@@ -353,63 +298,50 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
 	column_chunk_t **idx;
 	column_chunk_t **cidx;
 
-	INFO("SELECTION[scatter-gather] on column %lu = %u",  col, val);
-	INFO(" over ");
-	print_table_info(t);
-
 	// create index columns
 	//TODO introduce better data type to represent offsets (currently column chunk is one fixed large integer type)
-	TIMEIT("index creation",
-		idx = NEWPA(column_chunk_t, t->num_chunks);
-		MALLOC_CHECK_NO_MES(idx);
-		cidx = NEWPA(column_chunk_t, t->num_chunks);
-		MALLOC_CHECK_NO_MES(cidx);
-		for(size_t i = 0; i < t->num_chunks; i++)
-		{
-			idx[i] = create_col_chunk(chunk_size);
-			cidx[i] = create_col_chunk(chunk_size);
-		}
-	);
+	idx = NEWPA(column_chunk_t, t->num_chunks);
+	MALLOC_CHECK_NO_MES(idx);
+	cidx = NEWPA(column_chunk_t, t->num_chunks);
+	MALLOC_CHECK_NO_MES(cidx);
+	for(size_t i = 0; i < t->num_chunks; i++) {
+		idx[i] = create_col_chunk(chunk_size);
+		cidx[i] = create_col_chunk(chunk_size);
+	}
 
 	// scatter based on condition
-	TIMEIT("scatter",
-		unsigned int outpos = 0;
-		unsigned int outchunk = 0;
-		val_t *idx_c = idx[0]->data;
-		val_t *cidx_c = cidx[0]->data;
+	unsigned int outpos = 0;
+	unsigned int outchunk = 0;
+	val_t *idx_c = idx[0]->data;
+	val_t *cidx_c = cidx[0]->data;
 
-		for(size_t i = 0; i < t->num_chunks; i++)
-		{
-			table_chunk_t *tc = t->chunks[i];
-			column_chunk_t *c = tc->columns[col];
-			val_t *indata = c->data;
+	for(size_t i = 0; i < t->num_chunks; i++) {
+		table_chunk_t *tc = t->chunks[i];
+		column_chunk_t *c = tc->columns[col];
+		val_t *indata = c->data;
 
-			for(size_t j = 0; j < chunk_size; j++)
-			{
-				int match = (*indata++ == val);
-				idx_c[outpos] = j;
-				cidx_c[outpos] = i;
-				outpos += match;
+		for(size_t j = 0; j < chunk_size; j++) {
+			int match = (*indata++ == val);
+			idx_c[outpos] = j;
+			cidx_c[outpos] = i;
+			outpos += match;
 
-				if (outpos == chunk_size)
-				{
-					outpos = 0;
-					outchunk++;
-					idx_c = idx[outchunk]->data;
-					cidx_c = cidx[outchunk]->data;
-					total_results += chunk_size;
-				}
+			if (outpos == chunk_size) {
+				outpos = 0;
+				outchunk++;
+				idx_c = idx[outchunk]->data;
+				cidx_c = cidx[outchunk]->data;
+				total_results += chunk_size;
 			}
 		}
-		total_results += outpos;
+	}
+	total_results += outpos;
 
-		// fill remainder with [0,0] to simplify processing
-		while(++outpos < chunk_size)
-		{
-			idx_c[outpos] = 0;
-			cidx_c[outpos] = 0;
-		}
-	);
+	// fill remainder with [0,0] to simplify processing
+	while(++outpos < chunk_size) {
+		idx_c[outpos] = 0;
+		cidx_c[outpos] = 0;
+	}
 
 	// create output table
 	out_chunks = total_results / chunk_size + (total_results % chunk_size == 0 ? 0 : 1);
@@ -422,82 +354,52 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val)
 	r->chunks = NEWPA(table_chunk_t, out_chunks);
 	MALLOC_CHECK_NO_MES(r->chunks);
 
-	TIMEIT("malloc output table",
-		for(size_t i = 0; i < out_chunks; i++)
-		{
-			t_chunk =  NEW(table_chunk_t);
-			MALLOC_CHECK_NO_MES(t_chunk);
+	for(size_t i = 0; i < out_chunks; i++) {
+		t_chunk =  NEW(table_chunk_t);
+		MALLOC_CHECK_NO_MES(t_chunk);
 
-			t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
-			MALLOC_CHECK_NO_MES(t_chunk->columns);
+		t_chunk->columns = NEWPA(column_chunk_t, t->num_cols);
+		MALLOC_CHECK_NO_MES(t_chunk->columns);
 
-			for(size_t j = 0; j < t->num_cols; j++)
-			{
-				t_chunk->columns[j] = create_col_chunk(chunk_size);
-			}
-			r->chunks[i] = t_chunk;
+		for(size_t j = 0; j < t->num_cols; j++) {
+			t_chunk->columns[j] = create_col_chunk(chunk_size);
 		}
-	);
+		r->chunks[i] = t_chunk;
+	}
 
 	// gather based on index column one column at a time
-	TIMEIT("gather",
-		for(size_t j = 0; j < out_chunks; j++)
-		{
-			val_t *idx_c = idx[j]->data;
-			val_t *cidx_c = cidx[j]->data;
+	for(size_t j = 0; j < out_chunks; j++) {
+		val_t *idx_c = idx[j]->data;
+		val_t *cidx_c = cidx[j]->data;
 
-			for(size_t i = 0; i < t->num_cols; i++)
-			{
-				val_t *outdata = r->chunks[j]->columns[i]->data;
-				for(size_t k = 0; k < chunk_size; k++)
-				{
-					outdata[k] = t->chunks[cidx_c[k]]->columns[i]->data[idx_c[k]];
-				}
+		for(size_t i = 0; i < t->num_cols; i++) {
+			val_t *outdata = r->chunks[j]->columns[i]->data;
+			for(size_t k = 0; k < chunk_size; k++) {
+				outdata[k] = t->chunks[cidx_c[k]]->columns[i]->data[idx_c[k]];
 			}
 		}
-	);
+	}
 
-	TIMEIT("free",
-		for(size_t i = 0; i < out_chunks; i++)
-		{
-			free_col_chunk(idx[i]);
-			free_col_chunk(cidx[i]);
-		}
-		free(idx);
-		free(cidx);
-	);
-
-	INFO(" => output table: ");
-	print_table_info(r);
+	for(size_t i = 0; i < out_chunks; i++) {
+		free_col_chunk(idx[i]);
+		free_col_chunk(cidx[i]);
+	}
+	free(idx);
+	free(cidx);
 
 	free_col_table(t);
 
     return r;
 }
 
-void mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col);
-
-col_table_t *
-mergesort(col_table_t *in, size_t col, __attribute__((unused)) size_t domain_size) {
-	col_table_t* out = copy_col_table (in);
-
-	TIMEIT("time: sort",
-		   mergesort_helper(in, 0, in->num_rows, out, col);
-	);
-
-	free_col_table(in);
-
-	return out;
-}
-
-void
+static inline void
 compute_offset(size_t chunk_size, size_t row,
 			   size_t *chunk_no, size_t *chunk_offset) {
 	*chunk_no     = row / chunk_size;
 	*chunk_offset = row % chunk_size;
 }
 
-void
+static inline void
 load_row(col_table_t *table, size_t chunk_size, size_t row, size_t column,
 		 size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t **chunk_col, val_t *val, bool *done) {
 
@@ -515,7 +417,7 @@ load_row(col_table_t *table, size_t chunk_size, size_t row, size_t column,
 	}
 }
 
-void
+static inline void
 load_next_row(col_table_t *table, size_t chunk_size, size_t column,
 			  size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t **col, val_t *val) {
 	// chunk_no and chunk_offset are always set such that they point to the row'th row.
@@ -547,47 +449,10 @@ load_next_row(col_table_t *table, size_t chunk_size, size_t column,
 }
 
 static inline void
-copy_row_(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_offset, size_t num_cols) {
-	__asm volatile ("nop");
-	__asm volatile ("nop");
-	__asm volatile ("nop");
+copy_row(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_offset, size_t num_cols) {
 	for(size_t column = 0; column < num_cols; ++column) {
 		dst.columns[column]->data[dst_offset] =
 		src.columns[column]->data[src_offset];
-	}
-}
-
-uint64_t copy_row_time = 0;
-uint64_t copy_row_begin = 0;
-uint64_t copy_row_end = 0;
-uint64_t copy_row_calls = 0;
-
-static inline void
-copy_row(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_offset, size_t num_cols) {
-	rdtscll(copy_row_begin);
-	copy_row_(src, src_offset, dst, dst_offset, num_cols);
-	rdtscll(copy_row_end);
-	copy_row_time += copy_row_end - copy_row_begin;
-	++copy_row_calls;
-}
-
-void merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, size_t col);
-
-void
-mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col) {
-	// sorts in[start:stop] and puts the result in out[start:stop]
-	// PRECONDITION: multiset(in[start:stop]) == multiset(out[start:stop])
-
-	if (stop - start >= 2) {
-		size_t mid = (start + stop) / 2;
-
-		// recurse
-		// Remember out[start:mid] has the same elements as in[start:mid].
-		mergesort_helper(out, start, mid , in, col); // in[start:mid] is sorted
-		mergesort_helper(out, mid  , stop, in, col); // in[stop :mid] is sorted
-
-		// merge in[start:mid] with in[mid:stop], placing the result in out[start:stop], as desired.
-		merge(in, start, mid, stop, out, col);
 	}
 }
 
@@ -644,7 +509,6 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 		// but I want to assert we have a valid record before the next statment:
 		table_chunk_t out_chunk = *out->chunks[out_chunk_no];
 
-		TIMEIT("time: sort . interchunk merge . loop",
 		for (; out_chunk_offset < chunk_size && !(run1_empty && run2_empty); out_chunk_offset++) {
 			if (!run1_empty && (run2_empty || run1_val < run2_val)) {
 				/*DEBUG("copy %ld (run1) to %ld\n",
@@ -666,12 +530,41 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 				run2_empty = (run2_chunk_no == stop_chunk_no && run2_chunk_offset == stop_chunk_offset);
 			}
 		}
-		);
 		out_chunk_offset = 0;
 	}
 
 	return;
 }
+
+void
+mergesort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col) {
+	// sorts in[start:stop] and puts the result in out[start:stop]
+	// PRECONDITION: multiset(in[start:stop]) == multiset(out[start:stop])
+
+	if (stop - start >= 2) {
+		size_t mid = (start + stop) / 2;
+
+		// recurse
+		// Remember out[start:mid] has the same elements as in[start:mid].
+		mergesort_helper(out, start, mid , in, col); // in[start:mid] is sorted
+		mergesort_helper(out, mid  , stop, in, col); // in[stop :mid] is sorted
+
+		// merge in[start:mid] with in[mid:stop], placing the result in out[start:stop], as desired.
+		merge(in, start, mid, stop, out, col);
+	}
+}
+
+col_table_t *
+mergesort(col_table_t *in, size_t col, __attribute__((unused)) size_t domain_size) {
+	col_table_t* out = copy_col_table (in);
+
+	mergesort_helper(in, 0, in->num_rows, out, col);
+
+	free_col_table(in);
+
+	return out;
+}
+
 
 void countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col, size_t domain_size);
 
@@ -684,9 +577,7 @@ countingsort(col_table_t *in, size_t col, size_t domain_size)
 
 	col_table_t* out = create_col_table_like (in);
 
-	TIMEIT("time: sort",
-		   countingsort_helper(in, 0, in->num_rows, out, col, domain_size);
-	);
+	countingsort_helper(in, 0, in->num_rows, out, col, domain_size);
 
 	free_col_table(in);
 
@@ -793,27 +684,6 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 	free(array_ends);
 }
 
-void
-merge_counting_sort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out, size_t col, size_t domain_size);
-
-col_table_t *
-mergecountingsort(col_table_t *in, size_t col, size_t domain_size)
-{
-	INFO("SORT\n");
-	INFO(" => input table:");
-	print_table_info(in);
-
-	col_table_t* out = copy_col_table (in);
-
-	TIMEIT("time: sort",
-		   merge_counting_sort_helper(in, 0, in->num_rows, out, col, domain_size);
-	);
-
-	free_col_table(in);
-
-	return out;
-}
-
 const size_t switch_to_other_sort = 10;
 
 void
@@ -838,93 +708,13 @@ merge_counting_sort_helper(col_table_t *in, size_t start, size_t stop, col_table
 	}
 }
 
-void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, table_chunk_t out_chunk, size_t num_cols, size_t col, size_t domain_size);
-void merge_intrachunk(table_chunk_t in_chunk, size_t start, size_t mid, size_t stop, table_chunk_t out_chunk, size_t col, size_t num_cols);
-
 col_table_t *
-countingmergesort(col_table_t *in, size_t col, size_t domain_size)
+mergecountingsort(col_table_t *in, size_t col, size_t domain_size)
 {
-	INFO("SORT\n");
-	INFO(" => input table:");
-	print_table_info(in);
+	col_table_t* out = copy_col_table (in);
 
-	col_table_t *out = create_col_table_like(in);
+	merge_counting_sort_helper(in, 0, in->num_rows, out, col, domain_size);
 
-	size_t chunk_size = get_chunk_size(in);
-	size_t sub_chunk = 1024 * 1024;
-	size_t num_chunks = in->num_chunks;
-	size_t num_cols = in->num_cols;
-	size_t num_rows = in->num_rows;
-
-	TIMEIT("time: sort",
-		   TIMEIT("time: sort . intrachunk sort",
-				  for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
-					  table_chunk_t in_chunk = *in->chunks[chunk_no];
-					  table_chunk_t out_chunk = *out->chunks[chunk_no];
-					  for (size_t start = 0; start < chunk_size; start += sub_chunk) {
-						  size_t stop = MIN(start + sub_chunk, chunk_size);
-						  countingsort_intrachunk(in_chunk, start, stop, out_chunk, num_cols, col, domain_size);
-					  }
-				  }
-				  // make the output of counting-sort the input for merging
-				  col_table_t *tmp;
-				  SWAP(in, out, tmp);
-		    );
-
-
-				  // in is sorted withinin subchunks of size sub_chunk
-				  for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
-					  table_chunk_t in_chunk = *in->chunks[chunk_no];
-					  table_chunk_t out_chunk = *out->chunks[chunk_no];
-					  for(size_t width = sub_chunk; width < chunk_size; width *= 2) {
-						  // in is sorted within subchunks of size width
-						  for(size_t start = 0; start < chunk_size; start += 2 * width) {
-							  size_t mid = MIN(start + width, chunk_size);
-							  size_t stop = MIN(start + 2 * width, chunk_size);
-							  merge_intrachunk(in_chunk, start, mid, stop, out_chunk, col, num_cols);
-						  }
-						  // out is sorted wihtin subchunks of size 2 * width
-						  col_table_t *tmp;
-						  SWAP(in, out, tmp);
-						  // in is sorted within subchunks of size 2 * width
-					  }
-				  }
-				  // in is sorted withinin chunks
-
-		   TIMEIT("time: sort . interchunk merge",
-				  for(size_t width = chunk_size; width < num_chunks * chunk_size; width *= 2) {
-					  // in is sorted into runs of size width
-					  for(size_t start = 0; start < num_rows; start += 2 * width) {
-						  size_t mid = MIN(start + width, num_rows);
-						  size_t stop = MIN(start + 2 * width, num_rows);
-						  //DEBUG("merge in[%ld:%ld], in[%ld:%ld] -> out[%ld:%ld]\n", start, mid, mid, stop, start, stop);
-						  merge(in, start, mid, stop, out, col);
-						  // 2 runs in in merge into 1 run in out
-					  }
-					  // out is sorted into runs of size 2 * width
-					  col_table_t *tmp;
-					  SWAP(in, out, tmp);
-					  // in is sorted into runs of size 2 * width
-				  }
-		  );
-  	);
-
-	//in is sorted
-	col_table_t *tmp;
-	SWAP(in, out, tmp);
-
-	// there is no telling if this is the original 'in' because swapping happens
-	// just promise to use this like,
-	//
-	//     t = countingmergesort(t, ...)
-	//     // do stuff with t
-	//
-	// and not like
-	//
-	//    countingmergesort(t, ...)
-	//     // do stuff with possibly invalid t
-	//
-	// so that the original pointer gets overwritten with whatever gets returned
 	free_col_table(in);
 
 	return out;
@@ -944,7 +734,6 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 		/* table_chunk_t *chunk_array = NEWA(size_t, table_chunk_t); */
 		/* MALLOC_NO_RET(chunk_array, "chunk_array"); */
 
-		TIMEIT("time: sort . intrachunk sort . mem",
 		{
 			offset_array = NEWA(size_t, row_count * domain_size);
 			MALLOC_NO_RET(offset_array, "offset_array");
@@ -961,10 +750,9 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 				array_ends  [i] = &offset_array[row_count * i];
 				//DEBUG("domain elem %ld starts at   %p\n", i, array_starts[i]);
 			}
-		});
+		}
 
 
-		TIMEIT("time: sort . intrachunk sort . read",
 		{
 			val_t *col_data = in_chunk.columns[col]->data;
 			// Filling the domain-element bucket with chunk_offsets
@@ -973,9 +761,8 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 				*array_ends[domain_elem] = chunk_offset;
 				array_ends[domain_elem] += sizeof(size_t*);
 			}
-		});
+		}
 
-		TIMEIT("time: sort . intrachunk sort . write",
 		{
 			// Draining the domain-element buckets into output chunk
 			// TODO: use one pointer instead of one for every row for array_start
@@ -992,11 +779,9 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 				size_t in_chunk_offset = *array_starts[cur_domain];
 				array_starts[cur_domain] += sizeof(size_t);
 
-				TIMEIT("time: sort . intrachunk sort . write . copy row", {
-					copy_row(in_chunk, in_chunk_offset, out_chunk, out_chunk_offset, num_cols);
-				});
+				copy_row(in_chunk, in_chunk_offset, out_chunk, out_chunk_offset, num_cols);
 			}
-		});
+		}
 
 		free(offset_array);
 		free(array_starts);
@@ -1027,6 +812,88 @@ merge_intrachunk(table_chunk_t in_chunk, size_t start, size_t mid, size_t stop, 
 			run2_empty = (run2 == stop);
 		}
 	}
+}
+
+col_table_t *
+countingmergesort(col_table_t *in, size_t col, size_t domain_size)
+{
+	col_table_t *out = create_col_table_like(in);
+
+	size_t chunk_size = get_chunk_size(in);
+	size_t sub_chunk = 1024 * 1024;
+	size_t num_chunks = in->num_chunks;
+	size_t num_cols = in->num_cols;
+	size_t num_rows = in->num_rows;
+
+	for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
+		table_chunk_t in_chunk = *in->chunks[chunk_no];
+		table_chunk_t out_chunk = *out->chunks[chunk_no];
+		for (size_t start = 0; start < chunk_size; start += sub_chunk) {
+			size_t stop = MIN(start + sub_chunk, chunk_size);
+			countingsort_intrachunk(in_chunk, start, stop, out_chunk, num_cols, col, domain_size);
+		}
+	}
+	// make the output of counting-sort the input for merging
+	{
+		col_table_t *tmp;
+		SWAP(in, out, tmp);
+	}
+
+	// in is sorted withinin subchunks of size sub_chunk
+	for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
+		table_chunk_t in_chunk = *in->chunks[chunk_no];
+		table_chunk_t out_chunk = *out->chunks[chunk_no];
+		for(size_t width = sub_chunk; width < chunk_size; width *= 2) {
+			// in is sorted within subchunks of size width
+			for(size_t start = 0; start < chunk_size; start += 2 * width) {
+				size_t mid = MIN(start + width, chunk_size);
+				size_t stop = MIN(start + 2 * width, chunk_size);
+				merge_intrachunk(in_chunk, start, mid, stop, out_chunk, col, num_cols);
+			}
+			// out is sorted wihtin subchunks of size 2 * width
+			col_table_t *tmp;
+			SWAP(in, out, tmp);
+			// in is sorted within subchunks of size 2 * width
+		}
+	}
+	// in is sorted withinin chunks
+
+	for(size_t width = chunk_size; width < num_chunks * chunk_size; width *= 2) {
+		// in is sorted into runs of size width
+		for(size_t start = 0; start < num_rows; start += 2 * width) {
+			size_t mid = MIN(start + width, num_rows);
+			size_t stop = MIN(start + 2 * width, num_rows);
+			//DEBUG("merge in[%ld:%ld], in[%ld:%ld] -> out[%ld:%ld]\n", start, mid, mid, stop, start, stop);
+			merge(in, start, mid, stop, out, col);
+			// 2 runs in in merge into 1 run in out
+		}
+		// out is sorted into runs of size 2 * width
+		col_table_t *tmp;
+		SWAP(in, out, tmp);
+		// in is sorted into runs of size 2 * width
+	}
+
+	//in is sorted
+	{
+		col_table_t *tmp;
+		SWAP(in, out, tmp);
+	}
+
+	// there is no telling if this is the original 'in' because swapping happens
+	// just promise to use this like,
+	//
+	//     t = countingmergesort(t, ...)
+	//     // do stuff with t
+	//
+	// and not like
+	//
+	//    countingmergesort(t, ...)
+	//     // do stuff with possibly invalid t
+	//
+	// so that the original pointer gets overwritten with whatever gets returned
+	free_col_table(in);
+
+	return out;
 }
 
 size_t* domain_count(col_table_t *in, size_t col, size_t domain_size) {

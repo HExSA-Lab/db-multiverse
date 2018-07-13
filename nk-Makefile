@@ -1,0 +1,1 @@
+obj-y += database.o operators.o

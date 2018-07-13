@@ -24,25 +24,18 @@
  *
  */
 
-#ifdef __USER
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#endif
-
 #ifdef __NAUTILUS__
-#include <nautilus/libccompat.h>
+	#include <nautilus/libccompat.h>
+#else
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <stdint.h>
 #endif
 
-#ifdef VERBOSE
-	#define INFO(fmt, args...)  printf("DB-MV: " fmt, ##args)
-	#define DEBUG(fmt, args...) printf("DB-MB DBG: " fmt, ##args)
-	#define ERROR(fmt, args...) printf("DB-MB ERR: " fmt, ##args)
-#else
-	#define INFO(fmt, args...) 
-	#define DEBUG(fmt, args...)
-	#define ERROR(fmt, args...)
-#endif
+#define INFO(fmt, args...)  printf("DB-MV INF: " fmt, ##args)
+#define DEBUG(fmt, args...) printf("DB-MB DBG: " fmt, ##args)
+#define ERROR(fmt, args...) printf("DB-MB ERR: " fmt, ##args)
+
 
 #define NEW(typ)  ((typ *) malloc(sizeof(typ)))
 #define NEWZ(typ) ((typ *) calloc(1, sizeof(typ)))

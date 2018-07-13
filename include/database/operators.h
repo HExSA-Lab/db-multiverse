@@ -1,12 +1,10 @@
 #ifndef __OPERATORS_H__
 #define __OPERATORS_H__
 
-#ifdef __USER
-#include <stdbool.h>
-#endif
-
 #ifdef __NAUTILUS__
-#include <nautilus/libccompat.h>
+	#include <nautilus/libccompat.h>
+#else
+	#include <stdbool.h>
 #endif
 
 #include "database.h"
