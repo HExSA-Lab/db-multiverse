@@ -29,8 +29,8 @@
 
 #include <libperf.h>
 
-#include "test/common.h"
-#include "test/timing.h"
+#include "app/common.h"
+#include "app/timing.h"
 
 static cntr_info_t * cntr_data = NULL;
 

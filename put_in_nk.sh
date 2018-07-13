@@ -1,8 +1,8 @@
 #!/bin/bash
 
 nautilus="${HOME}/nk"
-src_dest="${nautilus}/src/test"
-hdr_dest="${nautilus}/include/test"
+src_dest="${nautilus}/src/app"
+hdr_dest="${nautilus}/include/app"
 
 srcs=($(
     find . -name '*.c' | \

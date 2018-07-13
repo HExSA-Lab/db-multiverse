@@ -1,9 +1,22 @@
 CC:=gcc
 # INCLUDES:= -I. -Iinclude
 WARNINGS:= -Wall -Wextra
-CFLAGS_EXT:=-D__USER -std=c99
-CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) -O0 -g -DVERBOSE
-CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) -O3 -msse2 -ffast-math
+CFLAGS_EXT:=-D__USER -std=gnu99 -DNDEBUG -fgnu89-inline -m64 -fno-common
+# from nautilus/Makefile COMMON_FLAGS
+NAUT_COMMON_FLAGS :=            -O2 \
+			   -fno-omit-frame-pointer \
+			   -fno-stack-protector \
+			   -fno-strict-aliasing \
+                           -fno-strict-overflow \
+                           -fno-delete-null-pointer-checks \
+			   -mno-red-zone \
+		   -mno-sse2 \
+			   -mcmodel=large
+
+
+CFLAGS_DBG:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) -Og -g -DVERBOSE
+CFLAGS_OPT:=$(INCLUDES) $(WARNINGS) $(CFLAGS_EXT) $(NAUT_COMMON_FLAGS) -g
+# -msse2 -ffast-math
 #-funroll-loops
 # LIBS:= -lperf
 LDFLAGS:= -L$(PWD)/lib $(LIBS) -Wl,-rpath=$(PWD)/lib
@@ -27,7 +40,7 @@ run_small_debug: main_debug
 	gdb -q main_debug -ex 'r --chunksize 3000 --numchunks 10 --throwout 0 --trials 1'
 
 run_small_memcheck: main_debug
-	valgrind --leak-check=full ./main_debug --chunksize 3000 --numchunks 10 --throwout 0 --trials 1
+	valgrind --leak-check=full --show-leak-kinds=all ./main_debug --chunksize 3000 --numchunks 10 --throwout 0 --trials 1
 
 run_debug: main_debug
 	gdb -q main_debug -ex r

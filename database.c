@@ -1,19 +1,22 @@
-#ifdef __USER
-#include <string.h>
-#endif
-
 #ifdef __NAUTILUS__
-#include <nautilus/libccompat.h>
+	#include <nautilus/libccompat.h>
+#else
+	#include <string.h>
 #endif
 
-#include "test/database.h"
-#include "test/timing.h"
+#include "app/database.h"
+#include "app/timing.h"
 
-val_t
-randVal(unsigned int domain_size)
-{
-	//return (val_t) rand() % domain_size;
-	return 0;
+
+// rand() is very slow in Nautilus, so I roll my own.
+// See https://en.wikipedia.org/wiki/Linear_congruential_generator#Parameters_in_common_use
+uint32_t x = 0;
+uint32_t a = 1664525;
+uint32_t c = 1013904223;
+#define MY_RAND_MAX ((1U << 32) - 1)
+val_t randVal(unsigned int domain_size) {
+	x = (a * x + c) & MY_RAND_MAX;
+	return (val_t) (x % domain_size);
 }
 
 void
@@ -59,7 +62,7 @@ create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigne
 				}
 			}
 		}
-			   );
+	);
 
 	INFO("created table: ");
 	print_table_info(t);
@@ -165,11 +168,12 @@ copy_col_table (col_table_t *in) {
 	return out;
 }
 
-void
+inline void
 copy_table_chunk(table_chunk_t in_chunk, table_chunk_t out_chunk, size_t num_cols) {
 	size_t chunk_size = in_chunk.columns[0]->chunk_size;
 
 	for (size_t col = 0; col < num_cols; col++) {
+
 		memcpy(out_chunk.columns[col]->data,
 			   in_chunk.columns[col]->data,
 			   chunk_size * sizeof(val_t));

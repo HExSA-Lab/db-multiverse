@@ -1,19 +1,17 @@
-#ifdef __USER
-#include <time.h>
-#include <string.h>
-#include <getopt.h>
-#include <stdlib.h>
-#endif
-
 #ifdef __NAUTILUS__
-#include <nautilus/libccompat.h>
+	#include <nautilus/libccompat.h>
+#else
+	#include <time.h>
+	#include <string.h>
+	#include <getopt.h>
+	#include <stdlib.h>
 #endif
 
-#include "test/common.h"
-#include "test/database.h"
-#include "test/operators.h"
-#include "test/timing.h"
-#include "test/main.h"
+#include "app/common.h"
+#include "app/database.h"
+#include "app/operators.h"
+#include "app/timing.h"
+#include "app/main.h"
 
 typedef struct exp_options {
 	size_t num_chunks;
@@ -46,6 +44,7 @@ static void usage (char * prog);
 static void version (void);
 static uint64_t driver (exp_options_t options);
 static void set_impl_op(operator_t op, char *impl_name, exp_options_t *options_ptr);
+static void db_tests_main(exp_options_t options);
 
 static exp_options_t
 defaultOptions (void)
@@ -54,7 +53,7 @@ defaultOptions (void)
 
 	o.num_chunks = 10;
 	o.num_cols   = 10;
-	o.chunksize = 1024 * 1024;
+	o.chunksize = 1024 * 64;
 	o.table_type = COLUMN;
 	o.domain_size = 100;
 	o.repetitions = 10;
@@ -261,12 +260,14 @@ set_impl_op(operator_t op, char *impl_name, exp_options_t *options_ptr)
 	}
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-void parse_options(exp_options_t *options, int argc, char ** argv) {
-#pragma GCC diagnostic pop
-
-#ifdef _GETOPT_H
+#ifdef __NAUTILUS__
+void app_main() {
+	exp_options_t options = defaultOptions();	
+	db_tests_main(options);
+}
+#else
+int main (int argc, char ** argv){
+	exp_options_t options = defaultOptions();
     int c;
 	char *subopts;
 	char *subvalue;
@@ -309,13 +310,13 @@ void parse_options(exp_options_t *options, int argc, char ** argv) {
 
         switch (c) {
             case 't':
-                options->repetitions = atoi(optarg);
+                options.repetitions = atoi(optarg);
                 break;
             case 'k':
-                options->throwout = atoi(optarg);
+                options.throwout = atoi(optarg);
                 break;
             case 's':
-                options->exp_str = "scan";
+                options.exp_str = "scan";
                 break;
             case 'h':
                 usage(argv[0]);
@@ -326,19 +327,19 @@ void parse_options(exp_options_t *options, int argc, char ** argv) {
             case '?':
                 break;
             case 'u':
-            	options->num_chunks = (size_t) atoi(optarg);
+            	options.num_chunks = (size_t) atoi(optarg);
             	break;
             case 'n':
-            	options->chunksize = (size_t) atoi(optarg);
+            	options.chunksize = (size_t) atoi(optarg);
             	break;
             case 'c':
-            	options->num_cols = (size_t) atoi(optarg);
+            	options.num_cols = (size_t) atoi(optarg);
             	break;
             case 'y':
-            	options->table_type = (table_type_t) atoi(optarg); //TODO check that exists
+            	options.table_type = (table_type_t) atoi(optarg); //TODO check that exists
             	break;
             case 'd':
-            	options->domain_size = (unsigned int) atoi(optarg);
+            	options.domain_size = (unsigned int) atoi(optarg);
             	break;
             case 'i':
             	subopts = optarg;
@@ -351,7 +352,7 @@ void parse_options(exp_options_t *options, int argc, char ** argv) {
 						case SELECTION_CONST:
 						case SELECTION_ATT:
 						case PROJECTION:
-							set_impl_op(subo, subvalue, options);
+							set_impl_op(subo, subvalue, &options);
 							break;
 						default:
 							/* Unknown suboption. */
@@ -370,11 +371,11 @@ void parse_options(exp_options_t *options, int argc, char ** argv) {
 					{
                         case COUNTER_TYPE_GTOD:
                         case COUNTER_TYPE_CGT:
-                            options->cntr_type = subo;
+                            options.cntr_type = subo;
                             break;
                         case COUNTER_TYPE_PERF:
-                            options->cntr_type = subo;
-							set_perf_opt(options, subvalue);
+                            options.cntr_type = subo;
+							set_perf_opt(&options, subvalue);
 							break;
 
 						default:
@@ -389,50 +390,53 @@ void parse_options(exp_options_t *options, int argc, char ** argv) {
         }
 
     }
-#endif
-}
-
-#ifndef __NAUTILUS__
-int main (int argc, char ** argv){
-	db_tests_main(argc, argv);
+	db_tests_main(options);
+	return 0;
 }
 #endif
 
-// In nautilus there is a name collision on "main"
-int db_tests_main (int argc, char ** argv){
+void db_tests_main(exp_options_t options) {
 	time_int * runtimes;
-
-	exp_options_t options = defaultOptions();
-	parse_options(&options, argc, argv);
     print_options(options);
 
 	srand(time(NULL));
     runtimes = NEWA(time_int, options.repetitions);
+	init_timing();
 
     counter_init(options.cntr_type, options.cntr_arg);
 
 	// disable timing output, so that script doesn't pick up these timer vals
-	time_stuff = false;
+	disable_timing();
     for(size_t i = 0; i < options.throwout; i++)
     {
+		printf("throwout %ld\n", i);
     	driver(options);
     }
 
-	time_stuff = true;
+	enable_timing();
     for(size_t i = 0; i < options.repetitions; i++)
     {
+		printf("repetition %ld\n", i);
+		TIMEIT("time: driver",
     	runtimes[i] = driver(options);
+		);
     }
 
-    /* printf("\n\nCOUNTER VALS: ["); */
-    /* for(size_t i = 0; i < options.repetitions; i++) */
-    /* { */
-    /* 	printf("%lu%s", runtimes[i], (i < options.repetitions - 1) ? ", ":  ""); */
-    /* } */
-    /* printf("]\n\n"); */
+	output_timing();
+
+    printf("\n\nCOUNTER VALS: [");
+    for(size_t i = 0; i < options.repetitions; i++)
+    {
+    	printf("%lu%s", runtimes[i], (i < options.repetitions - 1) ? ", ":  "");
+    }
+    printf("]\n\n");
 	free(runtimes);
 
-    counter_deinit();
+	extern uint64_t copy_row_time;
+	printf("copy_row_time %lu\n", copy_row_time);
+	extern uint64_t copy_row_calls;
+	printf("copy_row_calls %lu\n", copy_row_calls);
 
-    return 0;
+    counter_deinit();
+	destroy_timing();
 }

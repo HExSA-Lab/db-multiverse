@@ -22,13 +22,12 @@
  * Copyright (c) 2018, Kyle C. Hale <khale@cs.iit.edu>
  * 
  */
-#ifdef __USER
-#include <stdint.h>
-#include <stdbool.h>
-#endif
-
 #ifdef __NAUTILUS__
-#include <nautilus/libccompat.h>
+	#include <nautilus/libccompat.h>
+#else
+	#include <stdint.h>
+	#include <stdbool.h>
+	#include <stdlib.h>
 #endif
 
 typedef uint64_t time_int;
@@ -120,25 +119,33 @@ const char * counter_get_name();
 /*      } while(0) */
 
 
+extern size_t n_timing_msgs;
+extern char** timing_msgs_strs;
+extern uint64_t* timing_msgs_time;
 extern bool time_stuff;
+void record_time(char* mes, uint64_t s);
+void enable_timing();
+void disable_timing();
+void init_timing();
+void destroy_timing();
+void output_timing();
 
-#define TIMEIT(mes, code) \
+#define TIMEIT(mes, code)                                              \
     do {                                                               \
         uint64_t _s; rdtscll(_s);                                      \
         code;                                                          \
         uint64_t _e; rdtscll(_e);                                      \
-        uint64_t _res = _e - _s;                                       \
         if (time_stuff) {                                              \
-            printf("\t\tcounter: %s, %lu\n", (mes), _res);             \
+            record_time(mes, _e - _s);                                 \
         }                                                              \
-    } while(0)
+    } while(0)                                                         \
 
 #define rdtscll(val)                                    \
     do {                                                \
         uint32_t hi, lo;                                \
         __asm volatile("rdtsc" : "=a" (lo), "=d" (hi)); \
         val = ((uint64_t)hi << 32) | lo;                \
-    } while (0);
+    } while (0)
 // see http://oliveryang.net/2015/09/pitfalls-of-TSC-usage/#2-why-using-tsc
 
 #endif
