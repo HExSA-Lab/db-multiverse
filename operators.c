@@ -992,9 +992,9 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 				size_t in_chunk_offset = *array_starts[cur_domain];
 				array_starts[cur_domain] += sizeof(size_t);
 
-				TIMEIT("time: sort . intrachunk sort . write . copy row", {
+				{
 					copy_row(in_chunk, in_chunk_offset, out_chunk, out_chunk_offset, num_cols);
-				});
+				}
 			}
 		});
 

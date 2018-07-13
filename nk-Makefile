@@ -1,0 +1,1 @@
+obj-y += main.o database.o mock_advanced_timing.o operators.o timing.o

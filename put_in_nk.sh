@@ -4,18 +4,16 @@ nautilus="${HOME}/nk"
 src_dest="${nautilus}/src/app"
 hdr_dest="${nautilus}/include/app"
 
-srcs=($(
-    find . -name '*.c' | \
-    grep -v "./advanced_timing.c"
-))
+ln -s "$(realpath nk-Makefile)" "${src_dest}/Makefile"
 
-hdrs=($(
-    find . -name '*.h' | \
-    grep -v "./include/libperf.h"
-))
+srcs=($(find . -name '*.c'))
+hdrs=($(find . -name '*.h'))
 
-mkdir "${src_dest}"
-mkdir "${hdr_dest}"
+rm -rf "${src_dest}"
+rm -rf "${hdr_dest}"
+
+mkdir "${src_dest}" "${nautilus}/src/database"
+mkdir "${hdr_dest}" "${nautilus}/include/database"
 
 for file in "${srcs[@]}"
 do

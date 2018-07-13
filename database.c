@@ -13,9 +13,8 @@
 uint32_t x = 0;
 uint32_t a = 1664525;
 uint32_t c = 1013904223;
-#define MY_RAND_MAX ((1U << 32) - 1)
 val_t randVal(unsigned int domain_size) {
-	x = (a * x + c) & MY_RAND_MAX;
+	x = (a * x + c);
 	return (val_t) (x % domain_size);
 }
 
