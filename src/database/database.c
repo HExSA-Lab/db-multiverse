@@ -60,8 +60,8 @@ create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigne
 
 inline void
 free_col_chunk (column_chunk_t *c) {
-	free(c->data);
-	free(c);
+	my_free(c->data);
+	my_free(c);
 }
 
 inline void
@@ -70,8 +70,8 @@ free_table_chunk(table_chunk_t *tc, size_t num_cols) {
 		column_chunk_t *c = tc->columns[j];
 		free_col_chunk(c);
 	}
-	free(tc->columns);
-	free(tc);
+	my_free(tc->columns);
+	my_free(tc);
 }
 
 void
@@ -80,8 +80,8 @@ free_col_table (col_table_t *t)
 	for(size_t i = 0; i < t->num_chunks; i++) {
 		free_table_chunk(t->chunks[i], t->num_cols);
 	}
-	free(t->chunks);
-	free(t);
+	my_free(t->chunks);
+	my_free(t);
 }
 
 inline column_chunk_t *
