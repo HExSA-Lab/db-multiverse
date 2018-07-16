@@ -13,6 +13,8 @@
 
 #ifdef REPLACE_MALLOC
 
+	#warning Using custom malloc
+
 	#ifndef REPLACE_MALLOC_DEFAULT_SIZE
 		#define REPLACE_MALLOC_DEFAULS_SIZE (256 * 1024 * 1024)
 	#endif
@@ -55,8 +57,6 @@
 	#pragma GCC diagnostic pop
 
 #else
-
-	#error You forgot to replace malloc
 
 	#pragma GCC diagnostic push
 	#pragma GCC diagnostic ignored "-Wunused-parameter"
