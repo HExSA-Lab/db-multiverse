@@ -1,1 +1,2 @@
-obj-y += database.o operators.o
+CFLAGS += -DREPLACE_MALLOC_DEFAULT_SIZE=15000000LU -DREPLACE_MALLOC
+obj-y += database.o operators.o my_malloc.o

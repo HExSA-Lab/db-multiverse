@@ -5,6 +5,7 @@
 	#include <string.h>
 #endif
 
+#include "database/my_malloc.h"
 #include "database/common.h"
 #include "database/operators.h"
 
@@ -88,15 +89,15 @@ projection(col_table_t *t, size_t *pos, size_t num_proj) {
 			if(colRetained[j] == 0) {
 				//DEBUG("Droping col %ld\n", j);
 				column_chunk_t *c = tc->columns[j];
-				free(c->data);
-				free(c);
+				my_free(c->data);
+				my_free(c);
 			}
 		}
 
-		free(tc->columns);
+		my_free(tc->columns);
 		tc->columns = new_columns;
 
-		free(colRetained);
+		my_free(colRetained);
 	}
 	t->num_cols = num_proj;
 
@@ -384,8 +385,8 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val) {
 		free_col_chunk(idx[i]);
 		free_col_chunk(cidx[i]);
 	}
-	free(idx);
-	free(cidx);
+	my_free(idx);
+	my_free(cidx);
 
 	free_col_table(t);
 
@@ -605,9 +606,9 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 	//DEBUG("array %p to %p, %ld rows, each of %ld size\n", array, array + domain_size * row_size, row_count, row_size);
 
 	// array_starts holds the first position of each row.
-	void **array_starts = malloc(domain_size * sizeof(size_t));
+	void **array_starts = NEWA(void*, domain_size);
 	MALLOC_NO_RET(array_starts, "array_starts");
-	void **array_ends = malloc(domain_size * sizeof(size_t));
+	void **array_ends   = NEWA(void*, domain_size);
 	MALLOC_NO_RET(array_ends, "array_ends");
 	for(size_t i = 0; i < domain_size; ++i) {
 		// row_size is measured in bytes, so cast to char**
@@ -679,9 +680,9 @@ countingsort_helper(col_table_t *in, size_t start, size_t stop, col_table_t *out
 		out_chunk_offset = 0;
 	}
 
-	free(array);
-	free(array_starts);
-	free(array_ends);
+	my_free(array);
+	my_free(array_starts);
+	my_free(array_ends);
 }
 
 const size_t switch_to_other_sort = 10;
@@ -783,9 +784,9 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 			}
 		}
 
-		free(offset_array);
-		free(array_starts);
-		free(array_ends);
+		my_free(offset_array);
+		my_free(array_starts);
+		my_free(array_ends);
 	}
 }
 
@@ -897,7 +898,7 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 }
 
 size_t* domain_count(col_table_t *in, size_t col, size_t domain_size) {
-	size_t *domain_counts = malloc(domain_size * sizeof(size_t));
+	size_t *domain_counts = NEWA(size_t, domain_size);
 	for(size_t domain_elem = 0; domain_elem < domain_size; ++domain_elem) {
 		domain_counts[domain_elem] = 0;
 	}
@@ -934,8 +935,8 @@ check_sorted(col_table_t *result, size_t col, size_t domain_size, col_table_t *c
 		ERROR("Non-bijective");
 	}
 
-	free(count1);
-	free(count2);
+	my_free(count1);
+	my_free(count2);
 
 	return same;
 }
