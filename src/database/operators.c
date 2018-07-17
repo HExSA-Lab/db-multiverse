@@ -382,8 +382,8 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val) {
 	}
 
 	for(size_t i = 0; i < out_chunks; i++) {
-		free_col_chunk(idx[i]);
-		free_col_chunk(cidx[i]);
+		free_col_chunk(idx[i], t->begin, t->end);
+		free_col_chunk(cidx[i], t->begin, t->end);
 	}
 	my_free(idx);
 	my_free(cidx);

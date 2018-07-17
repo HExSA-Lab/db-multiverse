@@ -42,6 +42,8 @@ typedef struct col_table {
 	size_t num_chunks;
 	size_t num_cols;
 	size_t num_rows;
+	val_t* begin;
+	val_t* end;
 	table_chunk_t ** chunks;
 } col_table_t;
 
@@ -51,8 +53,7 @@ void print_table_info (col_table_t *t);
 col_table_t *create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigned int domain_size);
 void free_col_table (col_table_t *t);
 column_chunk_t *create_col_chunk(size_t chunksize);
-void free_table_chunk(table_chunk_t *tc, size_t num_cols);
-void free_col_chunk (column_chunk_t *c);
+void free_col_chunk (column_chunk_t *c, val_t* begin, val_t* end);
 size_t get_chunk_size(col_table_t *t);
 col_table_t *copy_col_table (col_table_t *in);
 void copy_col_table_noalloc(col_table_t* in, col_table_t* out);

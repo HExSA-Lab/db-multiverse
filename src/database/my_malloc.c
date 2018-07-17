@@ -9,6 +9,7 @@
 	#include <stdbool.h>
 	#include <stdio.h>
 	#include <assert.h>
+	#include <string.h>
 #endif
 
 #ifdef REPLACE_MALLOC
@@ -16,7 +17,7 @@
 	#warning Using custom malloc
 
 	#ifndef REPLACE_MALLOC_DEFAULT_SIZE
-		#define REPLACE_MALLOC_DEFAULS_SIZE (256 * 1024 * 1024)
+		#define REPLACE_MALLOC_DEFAULT_SIZE (256 * 1024 * 1024)
 	#endif
 
 	void* allocation = NULL;
@@ -31,7 +32,10 @@
 
 	void my_malloc_deinit() {
 		if(allocation != NULL) {
-			INFO("only used %ld / %lu = %f\n", unoccupied - allocation, alloc_size, ((float) (unoccupied - allocation)) / alloc_size);
+			size_t usage = unoccupied - allocation;
+			float usage_ratio = ((float) usage) / alloc_size;
+			INFO("only used %ld / %lu = %.2f\n",
+				 usage, alloc_size, usage_ratio);
 			free(allocation);
 			unoccupied = allocation = NULL;
 		}
@@ -44,10 +48,9 @@
 
 		void* your_block = unoccupied;
 		unoccupied += size;
-		if(unoccupied > allocation + alloc_size) {
-			printf("tried to allocate %ld > %lu\n", (unoccupied - allocation), alloc_size);
-			exit(1);
-		}
+		passert(0 <      unoccupied - allocation &&
+				(size_t)(unoccupied - allocation) < alloc_size,
+				"false: %ld < %lu\n", unoccupied - allocation, alloc_size);
 		return your_block;
 	}
 
@@ -75,3 +78,15 @@
 
 #endif
 
+#ifdef REPLACE_MEMCPY
+	inline void* my_memcpy (void* destination, const void* source, size_t num) {
+		for(size_t i = 0; i < num; ++i) {
+			destination[i] = source[i];
+		}
+		return destination;
+	}
+#else
+	inline void* my_memcpy (void* destination, const void* source, size_t num) {
+		return memcpy(destination, source, num);
+	}
+#endif

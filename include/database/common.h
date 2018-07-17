@@ -47,6 +47,16 @@
 #define NEWA(typ,size) ((typ *) my_malloc(sizeof(typ) * size))
 #define NEWPA(typ,size) ((typ **) my_malloc(sizeof(typ*) * size))
 
+#define passert(cond, message, args...)			\
+	do {										\
+		if(!(cond)) {							\
+			printf("assert failed %s:%d: %s\n",	\
+				   __FILE__, __LINE__, #cond);	\
+			printf(message, ##args);			\
+			exit(1);							\
+		}										\
+	} while(0)
+
 #define MALLOC_NO_RET(pointer, mes) \
 	do { \
 		if (!(pointer)) { \
