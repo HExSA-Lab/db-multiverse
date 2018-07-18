@@ -16,7 +16,7 @@
 	#warning Using custom malloc
 
 	#ifndef REPLACE_MALLOC_DEFAULT_SIZE
-		#define REPLACE_MALLOC_DEFAULS_SIZE (256 * 1024 * 1024)
+		#define REPLACE_MALLOC_DEFAULT_SIZE (256 * 1024 * 1024)
 	#endif
 
 	void* allocation = NULL;
