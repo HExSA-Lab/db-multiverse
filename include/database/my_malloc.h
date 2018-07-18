@@ -11,6 +11,4 @@ void my_malloc_deinit();
 void* my_malloc(size_t size);
 void my_free(void* ptr);
 
-void* my_memcpy (void* destination, const void* source, size_t num);
-
 #endif
