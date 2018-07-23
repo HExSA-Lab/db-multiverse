@@ -190,15 +190,17 @@ void
 print_strided_db(col_table_t* db) {
 	size_t chunk_size = get_chunk_size(db);
 	size_t num_cols = db->num_cols;
-#define n_offsets 3
-	size_t offsets[n_offsets] = {0, chunk_size / 2, chunk_size - 1};
+	size_t num_chunks = db->num_chunks;
+	size_t chunk_skip = num_chunks / 10;
+#define n_offsets 2
+	size_t offsets[n_offsets] = {0, chunk_size / 2};
 
-	for(size_t chunk_no = 0; chunk_no < db->num_chunks; ++chunk_no) {
+	for(size_t chunk_no = 0; chunk_no < num_chunks; chunk_no += chunk_skip) {
 		column_chunk_t** cols = db->chunks[chunk_no]->columns;
 		for(size_t i = 0; i < n_offsets; ++i) {
 			size_t offset = offsets[i];
 			size_t row = chunk_no * chunk_size + offset;
-			printf("row %10ld (%2ld, %9ld): ", row, chunk_no, offset);
+			printf("row %6ld (%4ld, %3ld): ", row, chunk_no, offset);
 			for(size_t col = 0; col < num_cols; ++col) {
 				printf("%2d ", cols[col]->data[offset]);
 			}
@@ -216,7 +218,7 @@ print_full_db(col_table_t* db) {
 	for(size_t chunk_no = 0; chunk_no < db->num_chunks; ++chunk_no) {
 		column_chunk_t** cols = db->chunks[chunk_no]->columns;
 		for(size_t offset = 0; offset < chunk_size; ++offset, ++row) {
-			printf("row %3ld (%2ld, %3ld): ", row, chunk_no, offset);
+			printf("row %6ld (%4ld, %3ld): ", row, chunk_no, offset);
 			for(size_t col = 0; col < num_cols; ++col) {
 				printf("%2d ", cols[col]->data[offset]);
 			}

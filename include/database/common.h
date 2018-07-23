@@ -34,8 +34,8 @@
 
 #ifdef VERBOSE
 	#define INFO(fmt, args...)  do {printf("DB-MV INF: " fmt, ##args); fflush(stdout); } while(0)
-	#define DEBUG(fmt, args...) printf("DB-MB DBG: " fmt, ##args)
-	#define ERROR(fmt, args...) printf("DB-MB ERR: " fmt, ##args)
+	#define DEBUG(fmt, args...) do {printf("DB-MB DBG: " fmt, ##args); fflush(stdout); } while(0)
+	#define ERROR(fmt, args...) do {printf("DB-MB ERR: " fmt, ##args); fflush(stdout); } while(0)
 #else
 	#define INFO(fmt, args...)
 	#define DEBUG(fmt, args...)

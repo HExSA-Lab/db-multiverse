@@ -31,23 +31,24 @@
 
 	void my_malloc_deinit() {
 		if(allocation != NULL) {
-			INFO("only used %ld / %lu = %f\n", unoccupied - allocation, alloc_size, ((float) (unoccupied - allocation)) / alloc_size);
 			free(allocation);
 			unoccupied = allocation = NULL;
 		}
 	}
 
 	inline void* my_malloc(size_t size) {
-		if(allocation == NULL) {
-			my_malloc_init(REPLACE_MALLOC_DEFAULT_SIZE);
-		}
+		/* if(allocation == NULL) { */
+		/* 	my_malloc_init(REPLACE_MALLOC_DEFAULT_SIZE); */
+		/* } */
 
 		void* your_block = unoccupied;
 		unoccupied += size;
-		if(unoccupied > allocation + alloc_size) {
-			printf("tried to allocate %ld > %lu\n", (unoccupied - allocation), alloc_size);
-			exit(1);
-		}
+		#ifndef NDEBUG
+			if(unoccupied > allocation + alloc_size) {
+				printf("tried to allocate %ld > %lu\n", (unoccupied - allocation), alloc_size);
+				exit(1);
+			}
+		#endif
 		return your_block;
 	}
 
@@ -55,6 +56,14 @@
 	#pragma GCC diagnostic ignored "-Wunused-parameter"
 	inline void my_free(void* ptr) {}
 	#pragma GCC diagnostic pop
+
+	void my_malloc_print() {
+		if(allocation != NULL) {
+			printf("Used %ld / %lu = %f\n", unoccupied - allocation, alloc_size, ((float) (unoccupied - allocation)) / alloc_size);
+		} else {
+			printf("On, but not initialized\n");
+		}
+	}
 
 #else
 
@@ -71,6 +80,10 @@
 
 	inline void my_free(void* ptr) {
 		free(ptr);
+	}
+
+	void my_malloc_print() {
+		printf("Off\n");
 	}
 
 #endif

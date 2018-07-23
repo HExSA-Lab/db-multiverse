@@ -725,26 +725,15 @@ uint64_t countingsort_interachunk_mem = 0;
 uint64_t countingsort_interachunk_loop1 = 0;
 uint64_t countingsort_interachunk_loop2 = 0;
 
-void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, table_chunk_t out_chunk, size_t num_cols, size_t col, size_t domain_size) {
+void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, table_chunk_t out_chunk, size_t num_cols, size_t col, size_t domain_size, size_t* offset_array, size_t** array_starts, size_t** array_ends) {
 	size_t row_count = stop - start;
-	size_t *offset_array;
-	size_t ** array_starts;
-	size_t ** array_ends;
 	if (row_count > 1) {
 		// one row for every domain-element
 		/* table_chunk_t *chunk_array = NEWA(size_t, table_chunk_t); */
 		/* MALLOC_NO_RET(chunk_array, "chunk_array"); */
 
 		{
-			offset_array = NEWA(size_t, row_count * domain_size);
-			MALLOC_NO_RET(offset_array, "offset_array");
-
-			//DEBUG("array %p to %p, %ld rows, %ld cols, of size %ld bytes (%ld total)\n",
-			//array, array + domain_size * row_size, domain_size, row_count, sizeof(size_t), domain_size * row_size);
-
 			// array_starts holds the first position of each row.
-			array_starts = NEWA(size_t*, domain_size);
-			array_ends   = NEWA(size_t*, domain_size);
 			for(size_t i = 0; i < domain_size; ++i) {
 				// row_size is measured in bytes, so cast to char**
 				array_starts[i] = &offset_array[row_count * i];
@@ -821,17 +810,26 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 	col_table_t *out = create_col_table_like(in);
 
 	size_t chunk_size = get_chunk_size(in);
-	size_t sub_chunk = 1024 * 1024;
+	// this makes countingsort_intrachunk the whole chunk
+	// and thus eliminates the need for merge_intrachunk
+	size_t sub_chunk = chunk_size;
 	size_t num_chunks = in->num_chunks;
 	size_t num_cols = in->num_cols;
 	size_t num_rows = in->num_rows;
 
+	size_t*  offset_array = NEWA(size_t, sub_chunk * domain_size);
+	MALLOC_NO_RET(offset_array, "offset_array");
+	size_t** array_starts = NEWA(size_t*, domain_size);
+	MALLOC_NO_RET(array_starts, "array_starts");
+	size_t** array_ends   = NEWA(size_t*, domain_size);
+	MALLOC_NO_RET(array_ends, "array_ends");
 	for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
 		table_chunk_t in_chunk = *in->chunks[chunk_no];
 		table_chunk_t out_chunk = *out->chunks[chunk_no];
 		for (size_t start = 0; start < chunk_size; start += sub_chunk) {
 			size_t stop = MIN(start + sub_chunk, chunk_size);
-			countingsort_intrachunk(in_chunk, start, stop, out_chunk, num_cols, col, domain_size);
+			countingsort_intrachunk(in_chunk, start, stop, out_chunk, num_cols,
+				col, domain_size, offset_array, array_starts, array_ends);
 		}
 	}
 	// make the output of counting-sort the input for merging
@@ -933,10 +931,11 @@ check_sorted(col_table_t *result, size_t col, size_t domain_size, col_table_t *c
 	bool same = 0 == memcmp(count1, count2, domain_size * sizeof(size_t));
 	if (!same) {
 		ERROR("Non-bijective");
+		return false;
 	}
 
 	my_free(count1);
 	my_free(count2);
 
-	return same;
+	return true;
 }
