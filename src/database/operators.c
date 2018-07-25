@@ -523,7 +523,6 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 
 			if(__builtin_expect(run_chunk_no    [src_bit] == last_run_chunk_no    [src_bit], 0) &&
 			   __builtin_expect(run_chunk_offset[src_bit] == last_run_chunk_offset[src_bit], 0)) {
-				DEBUG("run %d exhausted\n", src_bit);
 				which_not_empty = !src_bit;
 				break;
 			}
@@ -534,9 +533,6 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 			bv_iter_next(&bit_chunk_iter);
 			bv_iter_set_rest(&bit_chunk_iter, which_not_empty);
 		}
-		#ifdef VERBOSE
-			bv_print(&bit_chunk);
-		#endif
 
 		// merge run[0] and run[1] into out based on bit-vector
 		for(size_t this_col = 0; this_col < num_cols; ++this_col) {
@@ -557,13 +553,6 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 			        ++out_chunk_col, bv_iter_next(&bit_chunk_iter)) {
 
 				bit_t src_bit = bv_iter_get(&bit_chunk_iter);
-				#ifdef VERBOSE
-					if(this_col == sort_col) {
-						size_t offset = out_chunk_col - &out_chunk.columns[this_col]->data[out_chunk_offset];
-						DEBUG("run[%d].next -> out.chunk[%lu].offset[%lu]\n",
-						      src_bit, out_chunk_no, offset);
-					}
-				#endif
 				*out_chunk_col = run_val[src_bit];
 				load_next_row(in, chunk_size, this_col,
 				              &run_chunk_no[src_bit], &run_chunk_offset[src_bit],
@@ -766,7 +755,7 @@ mergecountingsort(col_table_t *in, size_t col, size_t domain_size)
 }
 */
 
-void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, table_chunk_t out_chunk, size_t num_cols, size_t col, size_t domain_size, size_t* offset_array, size_t** array_starts, size_t** array_ends) {
+void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, table_chunk_t out_chunk, size_t num_cols, size_t sort_col, size_t domain_size, size_t* offset_array, size_t** array_starts, size_t** array_ends) {
 	size_t row_count = stop - start;
 	if (row_count > 1) {
 		// one row for every domain-element
@@ -782,30 +771,24 @@ void countingsort_intrachunk(table_chunk_t in_chunk, size_t start, size_t stop, 
 		}
 
 
-		val_t *col_data = in_chunk.columns[col]->data;
+		val_t *col_data = in_chunk.columns[sort_col]->data;
 		// Filling the domain-element bucket with chunk_offsets
 		for(size_t chunk_offset = start; chunk_offset < stop; chunk_offset++) {
 			val_t domain_elem = col_data[chunk_offset];
 			*array_ends[domain_elem] = chunk_offset;
-			array_ends[domain_elem] += sizeof(size_t*);
+			++array_ends[domain_elem];
 		}
 
-		// Draining the domain-element buckets into output chunk
-		// TODO: use one pointer instead of one for every row for array_start
-		// TODO: loop over domain instead
-		val_t cur_domain = 0;
-		for(size_t out_chunk_offset = start; out_chunk_offset < stop; out_chunk_offset++) {
+		// Drain the domain-element buckets into output chunk
+		for(size_t this_col = 0; this_col < num_cols; ++this_col) {
+			val_t*  in_col_data =  in_chunk.columns[this_col]->data;
+			val_t* out_col_data = out_chunk.columns[this_col]->data + start;
 
-			// Skip to domain bucket which is non-empty
-			while(array_starts[cur_domain] == array_ends[cur_domain]) {
-				cur_domain++;
-				//DEBUG("domain element %d\n", cur_domain);
+			for(size_t cur_domain = 0; cur_domain < domain_size; ++cur_domain) {
+				for(size_t* offset_ptr = array_starts[cur_domain]; offset_ptr < array_ends[cur_domain]; ++offset_ptr, ++out_col_data) {
+					*out_col_data = in_col_data[*offset_ptr];
+				}
 			}
-
-			size_t in_chunk_offset = *array_starts[cur_domain];
-			array_starts[cur_domain] += sizeof(size_t);
-
-			copy_row(in_chunk, in_chunk_offset, out_chunk, out_chunk_offset, num_cols);
 		}
 	}
 }

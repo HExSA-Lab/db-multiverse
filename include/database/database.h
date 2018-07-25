@@ -60,5 +60,6 @@ col_table_t *create_col_table_like (col_table_t *in);
 void copy_table_chunk(table_chunk_t in_chunk, table_chunk_t out_chunk, size_t num_cols);
 table_chunk_t new_copy_table_chunk(table_chunk_t in_chunk, size_t num_cols);
 void print_db(col_table_t* db);
+void print_chunk(table_chunk_t chunk, size_t chunk_start, size_t chunk_size, size_t num_cols);
 
 #endif

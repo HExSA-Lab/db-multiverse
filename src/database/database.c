@@ -234,3 +234,14 @@ void print_db(col_table_t* db) {
 		print_strided_db(db);
 	}
 }
+
+void print_chunk(table_chunk_t chunk, size_t chunk_start, size_t chunk_size, size_t num_cols) {
+	column_chunk_t** cols = chunk.columns;
+	for(size_t offset = 0; offset < chunk_size; ++offset) {
+		printf("row %6ld (this, %3ld): ", offset + chunk_start, offset);
+		for(size_t col = 0; col < num_cols; ++col) {
+			printf("%2d ", cols[col]->data[offset]);
+		}
+		printf("\n");
+	}
+}
