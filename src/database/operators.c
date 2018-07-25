@@ -489,6 +489,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 	size_t out_chunk_offset = start_chunk_offset;
 	bit_vec_t bit_chunk;
 	bv_init(&bit_chunk, chunk_size);
+	uint8_t which_not_empty = 3;
 
 	for (; out_chunk_no < out->num_chunks; out_chunk_no++) {
 		// out_chunk_no < out->num_chunks is just an upper bound for valid records. We often terminate early.
@@ -506,32 +507,43 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 			first_run_chunk_no[i] = run_chunk_no[i];
 			first_run_chunk_offset[i] = run_chunk_offset[i];
 		}
+		printf("sta run0: (%lu,%lu), run1: (%lu,%lu), out: (%lu,%lu)\n", run_chunk_no[0], run_chunk_offset[0], run_chunk_no[1], run_chunk_offset[1], out_chunk_no, out_chunk_offset);
 
 		size_t first_out_chunk_offset = out_chunk_offset;
 		// set bit-vector based on which is bigger
-		uint8_t which_not_empty = 3;
 		bv_iter_init(&bit_chunk_iter, &bit_chunk);
 		bv_iter_skip(&bit_chunk_iter, out_chunk_offset);
 
-		for (; out_chunk_offset < chunk_size; out_chunk_offset++, bv_iter_next(&bit_chunk_iter)) {
-			bit_t src_bit = run_val[0] > run_val[1];
-			bv_iter_set(&bit_chunk_iter, src_bit);
-			load_next_row(in, chunk_size, sort_col,
-			              &run_chunk_no[src_bit], &run_chunk_offset[src_bit],
-			              &run_chunk[src_bit], &run_col[src_bit], &run_val[src_bit]
-			);
+		// only if both runs still have stuff left to go
+		if(which_not_empty == 3) {
+			for (; out_chunk_offset < chunk_size; out_chunk_offset++, bv_iter_next(&bit_chunk_iter)) {
+				bit_t src_bit = run_val[0] > run_val[1];
 
-			if(__builtin_expect(run_chunk_no    [src_bit] == last_run_chunk_no    [src_bit], 0) &&
-			   __builtin_expect(run_chunk_offset[src_bit] == last_run_chunk_offset[src_bit], 0)) {
-				which_not_empty = !src_bit;
-				break;
+				// marking bv_chunk_iter to which src had the lower value
+				bv_iter_set(&bit_chunk_iter, src_bit);
+
+				// and advancing our pointer in the run which had the lower value
+				load_next_row(in, chunk_size, sort_col,
+				              &run_chunk_no[src_bit], &run_chunk_offset[src_bit],
+				              &run_chunk[src_bit], &run_col[src_bit], &run_val[src_bit]
+				);
+	
+				// and checking to see if the run which had the lower valu eis out
+				if(__builtin_expect(run_chunk_no    [src_bit] == last_run_chunk_no    [src_bit] &&
+				                    run_chunk_offset[src_bit] == last_run_chunk_offset[src_bit], 0)) {
+					printf("run%d done\n", src_bit);
+					which_not_empty = !src_bit;
+					break;
+				}
 			}
 		}
+		printf("mid run0: (%lu,%lu), run1: (%lu,%lu), out: (%lu,%lu)\n", run_chunk_no[0], run_chunk_offset[0], run_chunk_no[1], run_chunk_offset[1], out_chunk_no, out_chunk_offset);
 
 		// set rest of in bit-vector
 		if(which_not_empty != 3) {
 			bv_iter_next(&bit_chunk_iter);
 			bv_iter_set_rest(&bit_chunk_iter, which_not_empty);
+			bv_print(&bit_chunk);
 		}
 
 		// merge run[0] and run[1] into out based on bit-vector
@@ -547,7 +559,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 			out_chunk_offset = first_out_chunk_offset;
 
 			bv_iter_init(&bit_chunk_iter, &bit_chunk);
-			val_t* out_chunk_col     = &out_chunk.columns[this_col]->data[out_chunk_offset];
+			val_t* out_chunk_col = &out_chunk.columns[this_col]->data[out_chunk_offset];
 			for(    ;
 			        __builtin_expect(bv_iter_has_next(&bit_chunk_iter), 1);
 			        ++out_chunk_col, bv_iter_next(&bit_chunk_iter)) {
@@ -565,7 +577,9 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 			run_col[i] = run_chunk[i].columns[sort_col]->data + run_chunk_offset[i];
 			run_val[i] = *run_col[i];
 		}
+
 		out_chunk_offset = 0;
+		printf("end run0: (%lu,%lu), run1: (%lu,%lu), out: (%lu,%lu)\n", run_chunk_no[0], run_chunk_offset[0], run_chunk_no[1], run_chunk_offset[1], out_chunk_no, out_chunk_offset);
 	}
 }
 
