@@ -25,6 +25,7 @@ void bv_print(bit_vec_t* bv);
 void bv_iter_init(bit_vec_iter_t* it, bit_vec_t* bv);
 void bv_iter_set_rest(bit_vec_iter_t* bv, bit_t val);
 void bv_iter_skip(bit_vec_iter_t* it, unsigned long n_bits);
+void bv_test();
 
 static inline void bv_iter_next(bit_vec_iter_t* it) {
 	--it->n_bits;
