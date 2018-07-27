@@ -5,18 +5,7 @@
 #endif
 
 #include "database/database.h"
-
-
-// rand() is very slow in Nautilus, so I roll my own.
-// See https://en.wikipedia.org/wiki/Linear_congruential_generator#Parameters_in_common_use
-uint32_t x = 0;
-uint32_t a = 1664525;
-uint32_t c = 1013904223;
-val_t randVal(unsigned int domain_size) {
-	x = (a * x + c);
-	// overflow is modulus
-	return (val_t) (x % domain_size);
-}
+#include "database/rand.h"
 
 void
 print_table_info (col_table_t *t) {
@@ -51,7 +40,7 @@ create_col_table (size_t num_chunks, size_t chunk_size, size_t num_cols, unsigne
 			MALLOC_CHECK(c->data, "chunk data");
 
 			for(size_t k = 0; k < chunk_size; k++) {
-				c->data[k] = randVal(domain_size);
+				c->data[k] = rand_next(domain_size);
 			}
 		}
 	}
@@ -228,7 +217,7 @@ print_full_db(col_table_t* db) {
 }
 
 void print_db(col_table_t* db) {
-	if(db->num_rows < 30) {
+	if(db->num_rows < 300) {
 		print_full_db(db);
 	} else {
 		print_strided_db(db);
