@@ -1,3 +1,8 @@
+/* #define DEBUG_MERGE 0 */
+/* #define DEBUG_MERGE_CHUNK 127 */
+/* #define DEBUG_MERGE_OFFSET_MIN 54 */
+/* #define DEBUG_MERGE_OFFSET_MAX 57 */
+
 #ifdef __NAUTILUS__
 	#include <nautilus/libccompat.h>
 #else
@@ -19,7 +24,7 @@ col_table_t *scatter_gather_selection_const (col_table_t *t, size_t col, val_t v
 /* col_table_t * countingsort(col_table_t *in, size_t col, size_t domain_size); */
 /* col_table_t * mergecountingsort(col_table_t *in, size_t col, size_t domain_size); */
 col_table_t *countingmergesort(col_table_t *in, size_t col, size_t domain_size);
-
+bool check_sorted_helper(col_table_t *result, size_t start_row, size_t stop_row, size_t sort_col);
 // information about operator implementations
 op_implementation_info_t impl_infos[] = {
 		{
@@ -446,6 +451,10 @@ copy_row(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_off
 
 void
 merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, size_t sort_col) {
+	#ifdef DEBUG_MERGE
+	print_db(in);
+	#endif
+
 	size_t chunk_size = get_chunk_size(in);
 	size_t num_cols = in->num_cols;
 
@@ -485,13 +494,12 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 		stop_chunk_offset,
 	};
 
-	size_t out_chunk_no = start_chunk_no;
-	size_t out_chunk_offset = start_chunk_offset;
+	size_t first_out_chunk_offset = start_chunk_offset;
 	bit_vec_t bit_chunk;
 	bv_init(&bit_chunk, chunk_size);
 	uint8_t which_not_empty = 3;
 
-	for (; out_chunk_no < out->num_chunks; out_chunk_no++) {
+	for (size_t out_chunk_no = start_chunk_no; out_chunk_no < out->num_chunks; out_chunk_no++) {
 		// out_chunk_no < out->num_chunks is just an upper bound for valid records. We often terminate early.
 		// but I want to assert we have a valid record before the next statment:
 		table_chunk_t out_chunk = *out->chunks[out_chunk_no];
@@ -507,17 +515,37 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 			first_run_chunk_no[i] = run_chunk_no[i];
 			first_run_chunk_offset[i] = run_chunk_offset[i];
 		}
-		printf("sta run0: (%lu,%lu), run1: (%lu,%lu), out: (%lu,%lu)\n", run_chunk_no[0], run_chunk_offset[0], run_chunk_no[1], run_chunk_offset[1], out_chunk_no, out_chunk_offset);
 
-		size_t first_out_chunk_offset = out_chunk_offset;
 		// set bit-vector based on which is bigger
 		bv_iter_init(&bit_chunk_iter, &bit_chunk);
-		bv_iter_skip(&bit_chunk_iter, out_chunk_offset);
+		bv_iter_skip(&bit_chunk_iter, first_out_chunk_offset);
 
 		// only if both runs still have stuff left to go
 		if(which_not_empty == 3) {
-			for (; out_chunk_offset < chunk_size; out_chunk_offset++, bv_iter_next(&bit_chunk_iter)) {
+			#ifdef DEBUG_MERGE
+				size_t out_chunk_offset = 0;
+			#endif
+			for (; bv_iter_has_next(&bit_chunk_iter); bv_iter_next(&bit_chunk_iter)) {
+
 				bit_t src_bit = run_val[0] > run_val[1];
+
+				#ifdef DEBUG_MERGE
+				if (out_chunk_no == DEBUG_MERGE_CHUNK) {
+					printf("%lu\n", out_chunk_offset);
+				}
+				if (out_chunk_no == DEBUG_MERGE_CHUNK &&
+				    DEBUG_MERGE_OFFSET_MIN <= out_chunk_offset &&
+				    out_chunk_offset <= DEBUG_MERGE_OFFSET_MAX) {
+					printf("out.chunks[%lu].offset[%lu] = %u = run[%u].chunks[%lu].offset[%lu] = max(run0.chunk[%lu].offset[%lu], run1.chunk[%lu].offset[%lu]) (col %lu)\n",
+						   out_chunk_no, out_chunk_offset,
+						   run_val[src_bit],
+						   src_bit, run_chunk_no[src_bit], run_chunk_offset[src_bit],
+						   run_chunk_no[0], run_chunk_offset[0],
+						   run_chunk_no[1], run_chunk_offset[1],
+						   sort_col);
+				}
+				++out_chunk_offset;
+				#endif
 
 				// marking bv_chunk_iter to which src had the lower value
 				bv_iter_set(&bit_chunk_iter, src_bit);
@@ -531,41 +559,73 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 				// and checking to see if the run which had the lower valu eis out
 				if(__builtin_expect(run_chunk_no    [src_bit] == last_run_chunk_no    [src_bit] &&
 				                    run_chunk_offset[src_bit] == last_run_chunk_offset[src_bit], 0)) {
-					printf("run%d done\n", src_bit);
+					#ifdef DEBUG_MERGE
+						printf("run%d done\n", src_bit);
+					#endif
+					bv_iter_next(&bit_chunk_iter);
 					which_not_empty = !src_bit;
 					break;
 				}
 			}
 		}
-		printf("mid run0: (%lu,%lu), run1: (%lu,%lu), out: (%lu,%lu)\n", run_chunk_no[0], run_chunk_offset[0], run_chunk_no[1], run_chunk_offset[1], out_chunk_no, out_chunk_offset);
 
 		// set rest of in bit-vector
 		if(which_not_empty != 3) {
-			bv_iter_next(&bit_chunk_iter);
+			#ifdef DEBUG_MERGE
+			if(out_chunk_no == DEBUG_MERGE_CHUNK) {
+				printf("Setting last %lu to %d\n", bit_chunk_iter.n_bits, which_not_empty);
+			}
+			#endif
 			bv_iter_set_rest(&bit_chunk_iter, which_not_empty);
-			bv_print(&bit_chunk);
 		}
+		#ifdef DEBUG_MERGE
+			if(out_chunk_no == DEBUG_MERGE_CHUNK) {
+				bv_print(&bit_chunk);
+			}
+		#endif
 
 		// merge run[0] and run[1] into out based on bit-vector
 		for(size_t this_col = 0; this_col < num_cols; ++this_col) {
 			for(uint8_t i = 0; i < 2; ++i) {
-				run_chunk_no[i] = first_run_chunk_no[i];
-				run_chunk_offset[i] = first_run_chunk_offset[i];
-				run_chunk[i] = *in->chunks[run_chunk_no[i]];
-				run_col[i] = run_chunk[i].columns[this_col]->data + run_chunk_offset[i];
-				run_val[i] = *run_col[i];
+				if( first_run_chunk_no[i] <  last_run_chunk_no[i] ||
+				   (first_run_chunk_no[i] == last_run_chunk_no[i] && first_run_chunk_offset[i] < last_run_chunk_offset[i])) {
+					// if first_run_____[i] is a valid (less than last_run____[*])
+					run_chunk_no[i] = first_run_chunk_no[i];
+					run_chunk_offset[i] = first_run_chunk_offset[i];
+					run_chunk[i] = *in->chunks[run_chunk_no[i]];
+					run_col[i] = run_chunk[i].columns[this_col]->data + run_chunk_offset[i];
+					run_val[i] = *run_col[i];
+				}
 			}
 
-			out_chunk_offset = first_out_chunk_offset;
-
 			bv_iter_init(&bit_chunk_iter, &bit_chunk);
-			val_t* out_chunk_col = &out_chunk.columns[this_col]->data[out_chunk_offset];
+			val_t* out_chunk_col = &out_chunk.columns[this_col]->data[first_out_chunk_offset];
+
+			#ifdef DEBUG_MERGE
+			size_t out_chunk_offset = 0;
+			#endif
 			for(    ;
 			        __builtin_expect(bv_iter_has_next(&bit_chunk_iter), 1);
 			        ++out_chunk_col, bv_iter_next(&bit_chunk_iter)) {
 
 				bit_t src_bit = bv_iter_get(&bit_chunk_iter);
 				*out_chunk_col = run_val[src_bit];
+
+				#ifdef DEBUG_MERGE
+				if(this_col == sort_col &&
+				   out_chunk_no == DEBUG_MERGE_CHUNK &&
+				   DEBUG_MERGE_OFFSET_MIN <= out_chunk_offset &&
+				   out_chunk_offset <= DEBUG_MERGE_OFFSET_MAX) {
+					printf("out.chunks[%lu].offset[%lu] = %u = run[%u].chunks[%lu].offset[%lu] (col %lu)\n",
+					       out_chunk_no, out_chunk_offset,
+					       run_val[src_bit],
+					       src_bit, run_chunk_no[src_bit], run_chunk_offset[src_bit],
+					       this_col
+					);
+				}
+				++out_chunk_offset;
+				#endif
+
 				load_next_row(in, chunk_size, this_col,
 				              &run_chunk_no[src_bit], &run_chunk_offset[src_bit],
 				              &run_chunk[src_bit], &run_col[src_bit], &run_val[src_bit]
@@ -578,9 +638,9 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 			run_val[i] = *run_col[i];
 		}
 
-		out_chunk_offset = 0;
-		printf("end run0: (%lu,%lu), run1: (%lu,%lu), out: (%lu,%lu)\n", run_chunk_no[0], run_chunk_offset[0], run_chunk_no[1], run_chunk_offset[1], out_chunk_no, out_chunk_offset);
+		first_out_chunk_offset = 0;
 	}
+	assert(check_sorted_helper(out, start, stop, sort_col));
 }
 
 /*
@@ -952,27 +1012,61 @@ size_t* domain_count(col_table_t *in, size_t col, size_t domain_size) {
 }
 
 bool
-check_sorted(col_table_t *result, size_t col, size_t domain_size, col_table_t *copy) {
-	val_t last = 0;
+check_sorted_helper(col_table_t *result, size_t start_row, size_t stop_row, size_t sort_col) {
 	size_t chunk_size = get_chunk_size(result);
-	for(size_t chunk_no = 0; chunk_no < result->num_chunks; ++chunk_no) {
-		val_t *data = result->chunks[chunk_no]->columns[col]->data;
-		for(size_t chunk_offset = 0; chunk_offset < chunk_size; ++chunk_offset) {
+	size_t start_chunk_no    , stop_chunk_no    ;
+	size_t start_chunk_offset, stop_chunk_offset;
+	table_chunk_t _chunk;
+	val_t *_col;
+	val_t _val;
+	load_row(result, chunk_size, start_row, sort_col,
+	         &start_chunk_no, &start_chunk_offset, &_chunk, &_col, &_val);
+	load_row(result, chunk_size,  stop_row, sort_col,
+	         & stop_chunk_no, & stop_chunk_offset, &_chunk, &_col, &_val);
+
+	size_t chunk_offset = start_chunk_offset;
+	val_t last = 0;
+	for(size_t chunk_no = start_chunk_no;
+	    chunk_no < stop_chunk_no || (chunk_no == stop_chunk_no && chunk_offset < stop_chunk_offset);
+	    ++chunk_no) {
+		val_t *data = result->chunks[chunk_no]->columns[sort_col]->data;
+		for(;
+		    (chunk_no < stop_chunk_no && chunk_offset < chunk_size) || (chunk_no == stop_chunk_no && chunk_offset < stop_chunk_offset);
+		    ++chunk_offset) {
 			if(data[chunk_offset] < last) {
 				#ifdef VERBOSE
+				{
+					printf("\n");
+					printf("%u = data.chunks[%lu].offset[%lu]\n", last, chunk_no, chunk_offset - 1);
+					printf("%u = data.chunks[%lu].offset[%lu]\n", data[chunk_offset], chunk_no, chunk_offset);
 					printf("Out of order\nNew:\n");
 					print_db(result);
+				}
 				#endif
 
 				return false;
 			}
 			last = data[chunk_offset];
 		}
+		chunk_offset = 0;
+	}
+
+	return true;
+}
+
+bool
+check_sorted(col_table_t *result, size_t sort_col, size_t domain_size, col_table_t *copy) {
+	size_t chunk_size = get_chunk_size(result);
+	size_t num_rows = chunk_size * result->num_chunks;
+
+	bool sorted = check_sorted_helper(result, 0, num_rows, sort_col);
+	if(!sorted) {
+		return false;
 	}
 
 	if(copy) {
-		size_t* count1 = domain_count(result, col, domain_size);
-		size_t* count2 = domain_count(copy, col, domain_size);
+		size_t* count1 = domain_count(result, sort_col, domain_size);
+		size_t* count2 = domain_count(copy, sort_col, domain_size);
 		bool same = 0 == memcmp(count1, count2, domain_size * sizeof(size_t));
 		if (!same) {
 			#ifdef VERBOSE
