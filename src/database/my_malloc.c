@@ -37,6 +37,7 @@
 	}
 
 	inline void* my_malloc(size_t size) {
+		assert(("my_malloc_init() already called", allocation != NULL));
 		/* if(allocation == NULL) { */
 		/* 	my_malloc_init(REPLACE_MALLOC_DEFAULT_SIZE); */
 		/* } */

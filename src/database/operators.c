@@ -457,7 +457,7 @@ copy_row(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_off
 }
 
 void
-merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, size_t sort_col) {
+merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, size_t sort_col, bit_vec_t* bit_chunk) {
 	#ifdef DEBUG_MERGE
 	print_db(in);
 	#endif
@@ -509,8 +509,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 	};
 
 	size_t first_out_chunk_offset = start_chunk_offset;
-	bit_vec_t bit_chunk;
-	bv_init(&bit_chunk, chunk_size);
+
 	uint8_t which_not_empty = 3;
 	// old stop condition out->num_chunks
 	for (size_t out_chunk_no = start_chunk_no; out_chunk_no < stop_chunk_no; out_chunk_no++) {
@@ -519,7 +518,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 		table_chunk_t out_chunk = *out->chunks[out_chunk_no];
 		C_CHUNK++;
 		// init bit-vector to 0 for the output chunk
-		bv_reset(&bit_chunk);
+		bv_reset(bit_chunk);
 		bit_vec_iter_t bit_chunk_iter;
 
 		// save initial run1, run2, and out positions
@@ -531,7 +530,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 		}
 
 		// set bit-vector based on which is bigger
-		bv_iter_init(&bit_chunk_iter, &bit_chunk);
+		bv_iter_init(&bit_chunk_iter, bit_chunk);
 		bv_iter_skip(&bit_chunk_iter, first_out_chunk_offset);
 
 		// only if both runs still have stuff left to go
@@ -613,7 +612,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 				}
 			}
 
-			bv_iter_init(&bit_chunk_iter, &bit_chunk);
+			bv_iter_init(&bit_chunk_iter, bit_chunk);
 			C_READITER++;
 			val_t* out_chunk_col = &out_chunk.columns[this_col]->data[first_out_chunk_offset];
 
@@ -1067,11 +1066,8 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 
 	{
 		size_t*  offset_array = NEWA(size_t, sub_chunk * domain_size);
-		MALLOC_NO_RET(offset_array, "offset_array");
 		size_t** array_starts = NEWA(size_t*, domain_size);
-		MALLOC_NO_RET(array_starts, "array_starts");
 		size_t** array_ends   = NEWA(size_t*, domain_size);
-		MALLOC_NO_RET(array_ends, "array_ends");
 
 		for(size_t chunk_no = 0; chunk_no < in->num_chunks; ++chunk_no) {
 			table_chunk_t in_chunk = *in->chunks[chunk_no];
@@ -1115,19 +1111,26 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 	// in is sorted withinin chunks
 	*/
 
-	for(size_t width = chunk_size; width < num_chunks * chunk_size; width *= 2) {
-		// in is sorted into runs of size width
-		for(size_t start = 0; start < num_rows; start += 2 * width) {
-			size_t mid = MIN(start + width, num_rows);
-			size_t stop = MIN(start + 2 * width, num_rows);
-			//DEBUG("merge in[%ld:%ld], in[%ld:%ld] -> out[%ld:%ld]\n", start, mid, mid, stop, start, stop);
-			merge(in, start, mid, stop, out, col);
-			// 2 runs in in merge into 1 run in out
+	{
+		bit_vec_t bit_chunk;
+		bv_init(&bit_chunk, chunk_size);
+
+		for(size_t width = chunk_size; width < num_chunks * chunk_size; width *= 2) {
+			// in is sorted into runs of size width
+			for(size_t start = 0; start < num_rows; start += 2 * width) {
+				size_t mid = MIN(start + width, num_rows);
+				size_t stop = MIN(start + 2 * width, num_rows);
+				//DEBUG("merge in[%ld:%ld], in[%ld:%ld] -> out[%ld:%ld]\n", start, mid, mid, stop, start, stop);
+				merge(in, start, mid, stop, out, col, &bit_chunk);
+				// 2 runs in in merge into 1 run in out
+			}
+			// out is sorted into runs of size 2 * width
+			col_table_t *tmp;
+			SWAP(in, out, tmp);
+			// in is sorted into runs of size 2 * width
 		}
-		// out is sorted into runs of size 2 * width
-		col_table_t *tmp;
-		SWAP(in, out, tmp);
-		// in is sorted into runs of size 2 * width
+	
+		bv_free(&bit_chunk);
 	}
 
 	//in is sorted
@@ -1150,8 +1153,10 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 	// so that the original pointer gets overwritten with whatever gets returned
 	free_col_table(in);
 
+	#ifdef DEBUG_MERGE
 	printf("\nmerge calls: %lu\nchunk iter: %lu\nsetbit iter: %lu\ncreate read iter: %lu\nset col val: %lu:\n\n", C_MERGE, C_CHUNK, C_SETBIT, C_READITER, C_SETCOL);
-	
+	#endif
+
 	return out;
 }
 
@@ -1180,7 +1185,7 @@ countingmergesort2(col_table_t *in, size_t col, size_t domain_size) {
 			table_chunk_t out_chunk = *out->chunks[chunk_no];
 			for (size_t start = 0; start < chunk_size; start += sub_chunk) {
 				size_t stop = MIN(start + sub_chunk, chunk_size);
-				countingsort_intrachunk(in_chunk, start, stop, out_chunk, num_cols,
+				countingsort_intrachunk2(in_chunk, start, stop, out_chunk, num_cols,
 										col, domain_size, offset_array, array_starts, array_ends);
 			}
 		}
@@ -1197,7 +1202,7 @@ countingmergesort2(col_table_t *in, size_t col, size_t domain_size) {
 		for(size_t start = 0; start < num_rows; start += 2 * width) {
 			size_t mid = MIN(start + width, num_rows);
 			size_t stop = MIN(start + 2 * width, num_rows);
-			merge(in, start, mid, stop, out, col);
+			merge2(in, start, mid, stop, out, col);
 		}
 		col_table_t *tmp;
 		SWAP(in, out, tmp);
