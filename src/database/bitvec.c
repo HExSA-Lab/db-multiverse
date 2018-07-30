@@ -17,7 +17,8 @@
 #define BIT_MASK_ONE 0xFFFFFFFFFFFFFFFF
 
 void bv_init(bit_vec_t* bv, size_t n_bits) {
-	bv->data = my_malloc((n_bits + BITS_PER_UNIT) / BITS_PER_BYTE);
+	// allocate a not-lesser multiple of "BITS_PER_UNIT / BITS_PER_BYTE"
+	bv->data = my_malloc((n_bits + BITS_PER_UNIT) / BITS_PER_UNIT * BITS_PER_BYTE);
 	bv->n_bits = n_bits;
 }
 
@@ -26,7 +27,13 @@ void bv_free(bit_vec_t* bv) {
 }
 
 void bv_reset(bit_vec_t* bv) {
-	memset(bv->data, 0, (bv->n_bits + BITS_PER_UNIT) / BITS_PER_BYTE);
+	memset(bv->data, 0, (bv->n_bits + BITS_PER_UNIT) / BITS_PER_UNIT * BITS_PER_BYTE);
+	/*
+	bit_unit_t* stop = bv->data + (bv->n_bits + BITS_PER_UNIT) / BITS_PER_UNIT;
+	for(bit_unit_t* cur = bv->data; cur < stop; ++cur) {
+		*cur = 0;
+	}
+	*/
 }
 
 /*
@@ -95,15 +102,15 @@ void bv_iter_skip(bit_vec_iter_t* it, unsigned long n_bits) {
 }
 
 void bv_test() {
+	my_malloc_init(1 << 28);
 	assert(sizeof(bit_unit_t) * BITS_PER_BYTE == BITS_PER_UNIT);
 
-	// test mask_value
 	for(uint8_t i = 0; i < BITS_PER_UNIT; ++i) {
 		assert(mask_value(1UL << i) == i);
 	}
 
-	// asert BIT_MASK_ONE has the right number of F's
-	assert(~((bit_mask_t) BIT_MASK_ONE) == 0);
+	assert(("BIT_MASK_ONE has the right number of F's",
+	        ~((bit_mask_t) BIT_MASK_ONE) == 0));
 
 	for(size_t total_n_bits = 1; total_n_bits < 129; ++total_n_bits) {
 		for(uint8_t bit = 0; bit < 2; ++bit) {
