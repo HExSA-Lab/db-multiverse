@@ -13,8 +13,9 @@ typedef struct {
 typedef bool bit_t;
 typedef struct {
 	bit_unit_t* bit_unit;
-	size_t n_bits;
+	size_t n_bits_left;
 	bit_mask_t bit_mask;
+	bit_vec_t* bit_vec;
 } bit_vec_iter_t;
 
 void bv_init(bit_vec_t*, size_t n_bits);
@@ -28,7 +29,7 @@ void bv_iter_skip(bit_vec_iter_t* it, unsigned long n_bits);
 void bv_test();
 
 static inline __attribute__((always_inline)) void bv_iter_next(bit_vec_iter_t* it) {
-	--it->n_bits;
+	--it->n_bits_left;
 	it->bit_mask <<= 1;
 	if(__builtin_expect(it->bit_mask == 0, 0)) {
 		it->bit_mask = 1;
@@ -46,7 +47,7 @@ static inline __attribute__((always_inline)) void bv_iter_set(bit_vec_iter_t* it
 }
 
 static inline __attribute__((always_inline)) bool bv_iter_has_next(bit_vec_iter_t* it) {
-	return it->n_bits > 0;
+	return it->n_bits_left > 0;
 }
 
 #endif

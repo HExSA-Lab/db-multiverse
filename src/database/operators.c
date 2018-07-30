@@ -587,10 +587,10 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 		if(which_not_empty != 3) {
 			#ifdef DEBUG_MERGE
 			if(out_chunk_no == DEBUG_MERGE_CHUNK) {
-				printf("Setting last %lu to %d\n", bit_chunk_iter.n_bits, which_not_empty);
+				printf("Setting last %lu to %d\n", bit_chunk_iter.n_bits_left, which_not_empty);
 			}
 			#endif
-			C_SETBIT += bit_chunk_iter.n_bits;
+			C_SETBIT += bit_chunk_iter.n_bits_left;
 			bv_iter_set_rest(&bit_chunk_iter, which_not_empty);
 		}
 		#ifdef DEBUG_MERGE
