@@ -109,8 +109,7 @@ void bv_test() {
 		assert(mask_value(1UL << i) == i);
 	}
 
-	assert(("BIT_MASK_ONE has the right number of F's",
-	        ~((bit_mask_t) BIT_MASK_ONE) == 0));
+	assert(~(bit_mask_t) BIT_MASK_ONE == 0); // BIT_MASK_ONE has the right number of F's
 
 	for(size_t total_n_bits = 1; total_n_bits < 129; ++total_n_bits) {
 		for(uint8_t bit = 0; bit < 2; ++bit) {
