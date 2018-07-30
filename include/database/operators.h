@@ -33,5 +33,6 @@ extern const char * op_names[];
 
 bool check_sorted(col_table_t *result, size_t col, size_t domain_size, col_table_t *copy);
 col_table_t* countingmergesort(col_table_t *in, size_t col, size_t domain_size);
+col_table_t* countingmergesort2(col_table_t *in, size_t col, size_t domain_size);
 
 #endif
