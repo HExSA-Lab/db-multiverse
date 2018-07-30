@@ -3,6 +3,10 @@
 sample_op
 sample_op.dSYM
 .settings
-/GPATH
-/GRTAGS
-/GTAGS
+GPATH
+GRTAGS
+GTAGS
+build/
+perf.data*
+main
+main_debug

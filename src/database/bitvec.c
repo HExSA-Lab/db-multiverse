@@ -45,6 +45,7 @@ void bv_iter_init(bit_vec_iter_t* it, bit_vec_t* bv) {
 
 void bv_iter_set_rest(bit_vec_iter_t* it, bit_t val) {
 	if(val) {
+
 		//printf("setting this unit; *it->bit_unit = *%p = " UNIT_PRINTF " | " UNIT_PRINTF " = " UNIT_PRINTF "\n",
 		//       it->bit_unit, it->bit_unit[0], (BIT_MASK_ONE * it->bit_mask) * val,
 		//       it->bit_unit[0] | (BIT_MASK_ONE * it->bit_mask) * val);

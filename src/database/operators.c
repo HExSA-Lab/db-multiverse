@@ -70,6 +70,13 @@ const char * op_names[] = {
 		[SORT] = "sort",
 };
 
+
+unsigned long C_CHUNK = 0;
+unsigned long C_SETBIT = 0;
+unsigned long C_SETCOL = 0;
+unsigned long C_MERGE = 0;
+unsigned long C_READITER = 0;
+
 // projection only changes the schema
 col_table_t *
 projection(col_table_t *t, size_t *pos, size_t num_proj) {
@@ -399,14 +406,14 @@ scatter_gather_selection_const (col_table_t *t, size_t col, val_t val) {
     return r;
 }
 
-static inline void
+static inline __attribute__((always_inline)) void
 compute_offset(size_t chunk_size, size_t row,
 			   size_t *chunk_no, size_t *chunk_offset) {
 	*chunk_no     = row / chunk_size;
 	*chunk_offset = row % chunk_size;
 }
 
-static inline void
+static inline __attribute__((always_inline)) void
 load_row(col_table_t *table, size_t chunk_size, size_t row, size_t column,
 		 size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t **chunk_col, val_t *val) {
 
@@ -422,7 +429,7 @@ load_row(col_table_t *table, size_t chunk_size, size_t row, size_t column,
 	}
 }
 
-static inline void
+static inline __attribute__((always_inline)) void
 load_next_row(col_table_t *table, size_t chunk_size, size_t column,
 			  size_t *chunk_no, size_t *chunk_offset, table_chunk_t *chunk, val_t **col, val_t *val) {
 	++*chunk_offset;
@@ -441,7 +448,7 @@ load_next_row(col_table_t *table, size_t chunk_size, size_t column,
 	}
 }
 
-static inline void
+static inline __attribute__((always_inline)) void
 copy_row(table_chunk_t src, size_t src_offset, table_chunk_t dst, size_t dst_offset, size_t num_cols) {
 	for(size_t column = 0; column < num_cols; ++column) {
 		dst.columns[column]->data[dst_offset] =
@@ -455,6 +462,8 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 	print_db(in);
 	#endif
 
+	C_MERGE++;
+	
 	size_t chunk_size = get_chunk_size(in);
 	size_t num_cols = in->num_cols;
 
@@ -498,12 +507,12 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 	bit_vec_t bit_chunk;
 	bv_init(&bit_chunk, chunk_size);
 	uint8_t which_not_empty = 3;
-
-	for (size_t out_chunk_no = start_chunk_no; out_chunk_no < out->num_chunks; out_chunk_no++) {
+	// old stop condition out->num_chunks
+	for (size_t out_chunk_no = start_chunk_no; out_chunk_no < stop_chunk_no; out_chunk_no++) {
 		// out_chunk_no < out->num_chunks is just an upper bound for valid records. We often terminate early.
 		// but I want to assert we have a valid record before the next statment:
 		table_chunk_t out_chunk = *out->chunks[out_chunk_no];
-
+		C_CHUNK++;
 		// init bit-vector to 0 for the output chunk
 		bv_reset(&bit_chunk);
 		bit_vec_iter_t bit_chunk_iter;
@@ -549,7 +558,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 
 				// marking bv_chunk_iter to which src had the lower value
 				bv_iter_set(&bit_chunk_iter, src_bit);
-
+				C_SETBIT++;
 				// and advancing our pointer in the run which had the lower value
 				load_next_row(in, chunk_size, sort_col,
 				              &run_chunk_no[src_bit], &run_chunk_offset[src_bit],
@@ -576,6 +585,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 				printf("Setting last %lu to %d\n", bit_chunk_iter.n_bits, which_not_empty);
 			}
 			#endif
+			C_SETBIT += bit_chunk_iter.n_bits;
 			bv_iter_set_rest(&bit_chunk_iter, which_not_empty);
 		}
 		#ifdef DEBUG_MERGE
@@ -599,6 +609,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 			}
 
 			bv_iter_init(&bit_chunk_iter, &bit_chunk);
+			C_READITER++;
 			val_t* out_chunk_col = &out_chunk.columns[this_col]->data[first_out_chunk_offset];
 
 			#ifdef DEBUG_MERGE
@@ -610,7 +621,8 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 
 				bit_t src_bit = bv_iter_get(&bit_chunk_iter);
 				*out_chunk_col = run_val[src_bit];
-
+				C_SETCOL++;
+				
 				#ifdef DEBUG_MERGE
 				if(this_col == sort_col &&
 				   out_chunk_no == DEBUG_MERGE_CHUNK &&
@@ -992,6 +1004,8 @@ countingmergesort(col_table_t *in, size_t col, size_t domain_size)
 	// so that the original pointer gets overwritten with whatever gets returned
 	free_col_table(in);
 
+	printf("\nmerge calls: %lu\nchunk iter: %lu\nsetbit iter: %lu\ncreate read iter: %lu\nset col val: %lu:\n\n", C_MERGE, C_CHUNK, C_SETBIT, C_READITER, C_SETCOL);
+	
 	return out;
 }
 

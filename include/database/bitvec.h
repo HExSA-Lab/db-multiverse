@@ -27,7 +27,7 @@ void bv_iter_set_rest(bit_vec_iter_t* bv, bit_t val);
 void bv_iter_skip(bit_vec_iter_t* it, unsigned long n_bits);
 void bv_test();
 
-static inline void bv_iter_next(bit_vec_iter_t* it) {
+static inline __attribute__((always_inline)) void bv_iter_next(bit_vec_iter_t* it) {
 	--it->n_bits;
 	it->bit_mask <<= 1;
 	if(__builtin_expect(it->bit_mask == 0, 0)) {
@@ -36,16 +36,16 @@ static inline void bv_iter_next(bit_vec_iter_t* it) {
 	}
 }
 
-static inline bit_t bv_iter_get(bit_vec_iter_t* it) {
+static inline __attribute__((always_inline)) bit_t bv_iter_get(bit_vec_iter_t* it) {
 	return *it->bit_unit & it->bit_mask;
 }
 
-static inline void bv_iter_set(bit_vec_iter_t* it, bit_t val) {
+static inline __attribute__((always_inline)) void bv_iter_set(bit_vec_iter_t* it, bit_t val) {
 	// note bv must be reset first
 	*it->bit_unit |= it->bit_mask * val;
 }
 
-static inline bool bv_iter_has_next(bit_vec_iter_t* it) {
+static inline __attribute__((always_inline)) bool bv_iter_has_next(bit_vec_iter_t* it) {
 	return it->n_bits > 0;
 }
 
