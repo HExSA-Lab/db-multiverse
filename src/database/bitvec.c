@@ -4,6 +4,7 @@
  	#include <stdio.h>
 	#include <string.h>
 	#include <assert.h>
+	#include <stdint.h>
 #endif
 
 #include "database/bitvec.h"
@@ -77,7 +78,7 @@ void bv_print(bit_vec_t* bv) {
 void bv_test() {
 	assert(sizeof(bit_unit_t) * BITS_PER_BYTE == BITS_PER_UNIT);
 	for(size_t total_n_bits = 1; total_n_bits < 129; ++total_n_bits) {
-		for(u_int8_t bit = 0; bit < 2; ++bit) {
+		for(uint8_t bit = 0; bit < 2; ++bit) {
 			for(size_t skip_n_bits = 0; skip_n_bits < total_n_bits; ++skip_n_bits) {
 				for(size_t set_n_bits = skip_n_bits; set_n_bits < total_n_bits; ++set_n_bits) {
 					// Init vector/iterator

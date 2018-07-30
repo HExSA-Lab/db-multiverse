@@ -1,2 +1,2 @@
 CFLAGS += -DREPLACE_MALLOC
-obj-y += database.o operators.o my_malloc.o
+obj-y += database.o operators.o my_malloc.o rand.o bitvec.o
