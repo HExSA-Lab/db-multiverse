@@ -1,0 +1,27 @@
+// note that the lack of a *.c prevents the Makefile from erroneously picking this up as a target.
+
+char* perf_event_hdr_specific[PERF_EVENTS_SPECIFIC] = {
+	"dcache miss",
+	"icache miss",
+	"tlb miss",
+	"branch miss"
+};
+unsigned int perf_event_idx[PERF_EVENTS_SPECIFIC] = {
+	8,
+	1,
+	3,
+	6,
+};
+
+void timer_initialize_specific(timer_data_t* obj) {
+	for(unsigned int i = 0; i < PERF_EVENTS_SPECIFIC; ++i) {
+		obj->perf_event_nautk[i] = nk_pmc_create(perf_event_idx[i]);
+		nk_pmc_start(obj->perf_event_nautk[i]);
+	}
+}
+
+void timer_finalize_specific(timer_data_t* obj) {
+	for(unsigned short i = 0; i < PERF_EVENTS_SPECIFIC; ++i) {
+		nk_pmc_destroy(obj->perf_event_nautk[i]);
+	}
+}

@@ -1,0 +1,85 @@
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+
+static long
+sys_perf_event_open(struct perf_event_attr *hw_event,
+                    pid_t pid, int cpu, int group_fd,
+                    unsigned long flags) {
+	return syscall(__NR_perf_event_open, hw_event, pid, cpu,
+	               group_fd, flags);
+}
+
+char* perf_event_hdr_specific[PERF_EVENTS_SPECIFIC] = {
+	"dcache miss",
+	"icache miss",
+	"tlb miss",
+	"branch miss"
+};
+
+/*
+static struct perf_event_attr attr = {
+	.type = PERF_TYPE_RAW,
+	.config = 0xZ0040YYZZ, // Z-ZZ is HW ID, YY is unit mask (the 4 enables the counter)
+};
+*/
+
+static struct perf_event_attr perf_event_idx[PERF_EVENTS_SPECIFIC] = {
+	{.type = PERF_TYPE_RAW, .config = 0x000400143},
+	{.type = PERF_TYPE_RAW, .config = 0x000400081},
+	{.type = PERF_TYPE_RAW, .config = 0x000403346},
+	{.type = PERF_TYPE_RAW, .config = 0x0004000c3},
+};
+
+void timer_initialize_specific(timer_data_t* obj) {
+	/*
+	// these commented out bits of code enable "group" mode
+	int leader_fd = 0;
+	*/
+	for(unsigned int i = 0; i < PERF_EVENTS_SPECIFIC; ++i) {
+		// https://linux.die.net/man/2/perf_event_open
+		// https://github.com/Carrefour/carrefour-runtime/blob/master/carrefour.c
+		perf_event_idx[i].size = sizeof(struct perf_event_attr);
+		perf_event_idx[i].disabled = 0; // start right away
+		perf_event_idx[i].exclude_kernel = 0;
+		perf_event_idx[i].exclude_user = 0;
+		perf_event_idx[i].exclude_idle = 0;
+		perf_event_idx[i].read_format = 0;
+		/*
+		if(i == 0) {
+			perf_event_idx[i].pinned = 1;
+		}
+		*/
+
+		/*
+		int group_fd = i == 0 ? -1 : leader_fd;
+		*/
+		obj->perf_event_fds_linux[i] =
+			sys_perf_event_open(&perf_event_idx[i], 0, -1, -1, 0);
+		/*
+		if(i == 0) {
+			leader_fd = obj->perf_event_fds_linux[i];
+		}
+		*/
+
+		if(obj->perf_event_fds_linux[i] < 0) {
+			printf("perf counter %u failed (fd = %d)\n", i, obj->perf_event_fds_linux[i]);
+			perror("sys_perf_event_open");
+			exit(EXIT_FAILURE);
+		}
+
+		int rc = ioctl(obj->perf_event_fds_linux[i], PERF_EVENT_IOC_RESET, 0);
+		if(rc != 0) {
+			printf("perf counter %u failed (fd = %d, rc = %d)\n", i, obj->perf_event_fds_linux[i], rc);
+			perror("ioctl(perf_event_fd, RESET)");
+			exit(EXIT_FAILURE);
+		}
+	}
+}
+
+void timer_finalize_specific(timer_data_t* obj) {
+	for(unsigned int i = 0; i < PERF_EVENTS_SPECIFIC; ++i) {
+		close(obj->perf_event_fds_linux[i]);
+	}
+}
