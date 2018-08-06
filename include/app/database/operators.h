@@ -7,7 +7,7 @@
 	#include <stdbool.h>
 #endif
 
-#include "database.h"
+#include "app/database/database.h"
 
 typedef enum operator {
 	SELECTION_CONST = 0,
@@ -31,7 +31,16 @@ extern op_implementation_info_t impl_infos[];
 extern op_implementation_t default_impls[];
 extern const char * op_names[];
 
-bool check_sorted(col_table_t *result, size_t col, size_t domain_size, col_table_t *copy);
+/*
+src/app/database/operators.c:1280:1: error: conflicting types for ‘check_sorted’
+ check_sorted(col_table_t *result, size_t sort_col, size_t domain_size, col_table_t *copy) {
+ ^~~~~~~~~~~~
+In file included from src/app/database/operators.c:15:
+include/app/database/operators.h:34:6: note: previous declaration of ‘check_sorted’ was here
+ bool check_sorted(col_table_t *result, size_t col, size_t domain_size, col_table_t *copy);
+      ^~~~~~~~~~~~
+*/
+//bool check_sorted(col_table_t *result, size_t col, size_t domain_size, col_table_t *copy);
 col_table_t* countingmergesort(col_table_t *in, size_t col, size_t domain_size);
 col_table_t* countingmergesort2(col_table_t *in, size_t col, size_t domain_size);
 

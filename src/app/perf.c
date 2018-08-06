@@ -1,4 +1,4 @@
-#include "perf/perf.h"
+#include "app/perf.h"
 
 #ifdef __NAUTILUS__
 	#include "./perf_nautk.c_source"

@@ -1,4 +1,3 @@
-#include "app/timing.h"
 #ifdef __NAUTILUS__
 	#include <nautilus/libccompat.h>
 #else
@@ -8,7 +7,7 @@
 	#include <string.h>
 #endif
 
-#include "perf/perf.h"
+#include "app/perf.h"
 
 #ifdef SMALL
 	#define REPS 1

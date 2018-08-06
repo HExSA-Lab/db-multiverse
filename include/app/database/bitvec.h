@@ -2,7 +2,7 @@
 #define BITVEC_H
 
 #include <stdbool.h>
-#include "database/my_malloc.h"
+#include "app/database/my_malloc.h"
 
 typedef unsigned long bit_unit_t;
 typedef bit_unit_t bit_mask_t;

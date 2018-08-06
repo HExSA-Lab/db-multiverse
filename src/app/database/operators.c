@@ -10,10 +10,10 @@
 	#include <string.h>
 #endif
 
-#include "database/my_malloc.h"
-#include "database/common.h"
-#include "database/operators.h"
-#include "database/bitvec.h"
+#include "app/database/my_malloc.h"
+#include "app/database/common.h"
+#include "app/database/operators.h"
+#include "app/database/bitvec.h"
 
 // function declarations
 col_table_t *projection(col_table_t *t, size_t *pos, size_t num_proj);
@@ -485,7 +485,7 @@ merge(col_table_t *in, size_t start, size_t mid, size_t stop, col_table_t *out, 
 	               &start_chunk_no, &start_chunk_offset);
 
 	// The merging doesn't *have* to be chunk-aligned,
-	// but it should be for good performance.
+	// but it should be for good app/performance.
 	// Feel free to comment out this assertion if you still want to do the merge
 	assert(start_chunk_offset == 0);
 

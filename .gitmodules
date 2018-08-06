@@ -1,0 +1,3 @@
+[submodule "nautilus"]
+	path = nautilus
+	url = git@github.com:HExSA-Lab/nautilus.git

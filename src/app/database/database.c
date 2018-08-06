@@ -4,8 +4,8 @@
 	#include <string.h>
 #endif
 
-#include "database/database.h"
-#include "database/rand.h"
+#include "app/database/database.h"
+#include "app/database/rand.h"
 
 void
 print_table_info (col_table_t *t) {

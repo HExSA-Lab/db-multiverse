@@ -30,9 +30,9 @@ typedef struct {
 } timer_data_t;
 
 #ifdef __NAUTILUS__
-	#include <perf/perf_nautk.h>
+	#include <app/perf_nautk.h>
 #else
-	#include <perf/perf_linux.h>
+	#include <app/perf_linux.h>
 #endif
 
 void timer_initialize(timer_data_t* obj);

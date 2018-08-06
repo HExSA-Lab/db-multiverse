@@ -7,7 +7,7 @@
 	#include <stdint.h>
 #endif
 
-#include "database/bitvec.h"
+#include "app/database/bitvec.h"
 
 #define BITS_PER_BYTE ((unsigned long) 8)
 #define BITS_PER_UNIT ((unsigned long) (sizeof(bit_unit_t) * BITS_PER_BYTE))

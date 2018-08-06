@@ -42,7 +42,7 @@
 	#define ERROR(fmt, args...)
 #endif
 
-#include "database/my_malloc.h"
+#include "app/database/my_malloc.h"
 #define NEW(typ)  ((typ *) my_malloc(sizeof(typ)))
 #define NEWA(typ,size) ((typ *) my_malloc(sizeof(typ) * size))
 #define NEWPA(typ,size) ((typ **) my_malloc(sizeof(typ*) * size))

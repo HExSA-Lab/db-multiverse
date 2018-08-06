@@ -1,5 +1,5 @@
-#include "database/my_malloc.h"
-#include "database/common.h"
+#include "app/database/my_malloc.h"
+#include "app/database/common.h"
 
 #ifdef __NAUTILUS__
 	#include <nautilus/libccompat.h>

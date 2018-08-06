@@ -5,12 +5,12 @@
 	#include <stdbool.h>
 #endif
 
-#include "perf/perf.h"
-#include "database/rand.h"
-#include "database/database.h"
-#include "database/operators.h"
-#include "database/my_malloc.h"
-#include "database/rand.h"
+#include "app/perf.h"
+#include "app/database/rand.h"
+#include "app/database/database.h"
+#include "app/database/operators.h"
+#include "app/database/my_malloc.h"
+#include "app/database/rand.h"
 
 typedef unsigned long ulong;
 
