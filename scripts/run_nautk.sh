@@ -23,13 +23,13 @@ then
 fi
 
 # the host on which to to build the binary
-build_host="${build_host:-tinker-3}"
+build_host="${build_host:-tinker-2}"
 
 # the path to copy our code on the build_host
 build_path="${build_path:-nautilus}"
 
 # the host on which to run and meter our binary
-run_host="${run_host:-tinker-3}"
+run_host="${run_host:-tinker-2}"
 
 ###############################################################################
 # Set up log
@@ -94,7 +94,8 @@ rsync nautilus/ "${build_host}:${build_path}/" \
 	  --checksum   \
       `#--delete`   \
       --copy-links   \
-	  --verbose
+	  --verbose \
+	  --info=progress2
 # --copy-linkes makes rsync copy the _content_ of the links, rather than just the symlink
 
 # build on build host
@@ -109,20 +110,20 @@ else
 fi
 
 # capture FQDN hostname for later
-run_host_hostname=$(ssh "${run_host}" hostname)
+#run_host_hostname=$(ssh "${run_host}" hostname)
 
 ###############################################################################
 # run on remote host
 ###############################################################################
 
-./scripts/ipmi_helper.sh restart
-./scripts/ipmi_helper.sh console | unbuffer -p tee -a "${log}"
+controlled_host=${run_host} ./scripts/ipmi_helper.sh restart
+controlled_host=${run_host} ./scripts/ipmi_helper.sh select_nautilus | unbuffer -p tee -a "${log}"
 
-#./scripts/ipmi_helper.sh run_nautilus | unbuffer -p tee -a "${log}"
+./scripts/split_files.py "${log}"
 
 ./scripts/notify.sh 'Nautilus done'
 
-./scripts/ipmi_helper.sh restart
-./scripts/ipmi_helper.sh wait_for_linux
+controlled_host=${run_host} ./scripts/ipmi_helper.sh restart
+controlled_host=${run_host} ./scripts/ipmi_helper.sh wait_for_linux
 
 ./scripts/notify.sh 'Linux back up'

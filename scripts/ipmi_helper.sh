@@ -4,18 +4,30 @@ set -o pipefail -o noclobber -o errexit -o nounset
 # cd to the root of the project
 cd "$(dirname "$(dirname "${0}")")"
 
-controlling_host="${controlling_host:-subutai}"
-ipmi_host="${run_host_ipmi:-10.47.142.35}"
-controlled_host="${controlled_host:-tinker-3}"
-controlled_host_fqdn=tinker-3.cs.iit.edu
-
-ipmi_args="-I lanplus -H "${ipmi_host}" -U root -f "/home-remote/sgrayson/passfile""
-
 if [ -z "${1:-}" ]
 then
 	echo "Must supply subcommand"
 	exit 1
 fi
+
+controlling_host="${controlling_host:-subutai}"
+controlled_host="${controlled_host:-tinker-2}"
+
+if [ "${controlled_host}" = tinker-2 ]
+then
+	ipmi_host="${run_host_ipmi:-10.47.142.34}"
+	controlled_host_fqdn=tinker-2.cs.iit.edu
+elif [ "${controlled_host}" = tinker-3 ]
+then
+	ipmi_host="${run_host_ipmi:-10.47.142.35}"
+	controlled_host_fqdn=tinker-3.cs.iit.edu
+else
+	echo "Host information not found"
+	exit 1
+fi
+
+
+ipmi_args="-I lanplus -H "${ipmi_host}" -U root -f "/home-remote/sgrayson/passfile""
 
 case "${1}" in
 	'restart')
@@ -31,8 +43,11 @@ case "${1}" in
 			sleep 3s
 		done
 		;;
-	'run_nautilus')
+	'select_nautilus')
 		unbuffer ./scripts/drive_grub.py
+		;;
+	'ipmi')
+		ssh -t "${controlling_host}" ipmitool ${3}
 		;;
 	*)
 		echo "Do not recognize subcommand '${1}'"

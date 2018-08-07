@@ -18,13 +18,13 @@ cd "$(dirname "$(dirname "${0}")")"
 # and it is more explicit
 
 # the host on which to to build the binary
-build_host="${build_host:-tinker-3}"
+build_host="${build_host:-tinker-2}"
 
 # the path to copy our code on the build_host
 build_path="${build_path:-db}"
 
 # the host on which to run and meter our binary
-run_host="${run_host:-tinker-3}"
+run_host="${run_host:-tinker-2}"
 
 # the name of the target to make (on the build_host), copy, and run (on the run_host)
 run_target="${run_target:-main}"

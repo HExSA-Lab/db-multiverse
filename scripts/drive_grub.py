@@ -8,14 +8,14 @@ import time
 child = pexpect.spawn('./scripts/ipmi_helper.sh console', env=os.environ, )
 child.logfile = sys.stdout.buffer
 
-child.expect('SOL Session operational', timeout=5)
+child.expect('SOL Session operational', timeout=15)
 
 try:
     # server firmware is done initing and trying to boot
     child.expect('Booting', timeout=120)
 
     # Grub lists Nautilus option
-    child.expect('Nautilus', timeout=60)
+    child.expect('Nautilus', timeout=120)
 
     # grub wants our input
     child.expect('automatically', timeout=5)
@@ -31,13 +31,11 @@ try:
     # press enter
     # sometimes the first \n doesn't take
     for _ in range(3):
-        child.send('\n')
-        time.sleep(1)
-        child.send('\rn')
+        child.send('\r\n')
         print('enter')
         time.sleep(1)
 
-    child.expect(['root-shell'], timeout=None)
+    child.expect(['root-shell', 'UNHANDLED EXCEPTION'], timeout=None)
 except KeyboardInterrupt:
     print('keyboard interrupt')
 finally:

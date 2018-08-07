@@ -2,6 +2,8 @@
 import re
 from pathlib import Path
 import os
+import sys
+
 
 if len(sys.argv) != 2:
     raise RuntimeError('Must pass a file')
