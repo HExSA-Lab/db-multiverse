@@ -14,7 +14,6 @@ void test() {
 	test_array();
 	test_deep_array();
 	test_db();
-	/* test_just_sort(8, 8, 4, 100); */
 }
 
 #ifdef __NAUTILUS__

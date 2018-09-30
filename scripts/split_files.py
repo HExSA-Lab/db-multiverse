@@ -11,7 +11,7 @@ file_path = Path(sys.argv[1])
 
 file_pattern = re.compile(rb'file: (?P<name>.*?) \{\n(?P<content>.*?)\}', re.DOTALL)
 
-with file_path.open('b') as file:
+with file_path.open('wb') as file:
     file_string = file.read()
     for match in file_pattern.finditer(file_string):
         sub_file_path = match.group('name')

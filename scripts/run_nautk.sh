@@ -39,7 +39,7 @@ run_host="${run_host:-tinker-2}"
 log=data/nautk_${version}.log
 if [ -e "${log}" ]
 then
-	if [ -n "${delete}" ]
+	if [ -n "${delete:-}" ]
 	then
 		rm "${log}"
 	else
@@ -56,34 +56,10 @@ echo "Git commit ${commit}" >> "${log}"
 git status >> "${log}"
 
 ###############################################################################
-# Insert our code into Nautilus
-###############################################################################
-for subdir in src include
-do
-	rm -rf "nautilus/${subdir}/app"
-
-	# copy directory structure
-	find "${subdir}" -mindepth 1 -type d -exec mkdir nautilus/{} \;
-	# directories are copied instead of linked, so that
-	# we can add a Makefile to nautilus/src/app it ending up in our proj/src/app
-	# Additionally, it avoids nautilus outputing object-files in our source directories.
-
-	# link files
-	find "${subdir}" -mindepth 1 -type f -exec link {} nautilus/{} \;
-done
-
-for subdir in $(find src/app -type d)
-do
-	object_files=$(find "${subdir}" -maxdepth 1 -name '*.c' -printf '%P ' | sed 's/\.c/\.o/g')
-	subsubdirs=$(find "${subdir}" -mindepth 1 -maxdepth 1 -type d -printf '%P/ ')
-	rm -f "nautilus/${subdir}/Makefile"
-	echo "obj-y += ${subsubdirs}" > "nautilus/${subdir}/Makefile"
-	echo "obj-y += ${object_files}" >> "nautilus/${subdir}/Makefile"
-done
-
-###############################################################################
 # build
 ###############################################################################
+
+./scripts/insert_into_nautilus.sh
 
 # sync with build_host
 #make -C nautilus clean
@@ -91,10 +67,9 @@ done
 rsync nautilus/ "${build_host}:${build_path}/" \
       --archive  \
       --compress  \
-	  --checksum   \
-      `#--delete`   \
-      --copy-links   \
-	  --verbose \
+      --delete     \
+      --copy-links  \
+	  --verbose      \
 	  --info=progress2
 # --copy-linkes makes rsync copy the _content_ of the links, rather than just the symlink
 
@@ -117,13 +92,13 @@ fi
 ###############################################################################
 
 controlled_host=${run_host} ./scripts/ipmi_helper.sh restart
-controlled_host=${run_host} ./scripts/ipmi_helper.sh select_nautilus | unbuffer -p tee -a "${log}"
-
+set +o errexit
+./scripts/drive_grub.py | tee -a "${log}"
 ./scripts/split_files.py "${log}"
+set -o errexit
 
-./scripts/notify.sh 'Nautilus done'
+#./scripts/notify.sh 'Nautilus done'
 
-controlled_host=${run_host} ./scripts/ipmi_helper.sh restart
-controlled_host=${run_host} ./scripts/ipmi_helper.sh wait_for_linux
+controlled_host=${run_host} ./scripts/ipmi_helper.sh restart wait
 
 ./scripts/notify.sh 'Linux back up'

@@ -17,12 +17,12 @@
 	#define LOG_DIM2_MIN 8
 	#define LOG_DIM2_MAX 20
 #else
-	#define REPS 10
-	#define LOG_MEM_MAX 24
+	#define REPS 5
+	#define LOG_MEM_MAX 17
 	#define LOG_DIM1_MIN 6
-	#define LOG_DIM1_MAX 20
+	#define LOG_DIM1_MAX 18
 	#define LOG_DIM2_MIN 6
-	#define LOG_DIM2_MAX 20
+	#define LOG_DIM2_MAX 18
 #endif
 
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
@@ -159,7 +159,7 @@ void test_deep_array() {
 	for(uint8_t log_dim1 = LOG_DIM1_MIN; log_dim1 < LOG_DIM1_MAX; ++log_dim1) {
 		for(uint8_t log_dim2 = LOG_DIM2_MIN; log_dim2 < LOG_DIM2_MAX; ++log_dim2) {
 			uint8_t log_total_size = log_dim1 + log_dim2;
-			if(log_total_size > LOG_MEM_MAX) {
+			if(log_total_size >= LOG_MEM_MAX) {
 				continue;
 			}
 			size_t dim1 = 1 << log_dim1;

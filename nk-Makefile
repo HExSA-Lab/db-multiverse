@@ -1,2 +1,0 @@
-CFLAGS += -DREPLACE_MALLOC -DNDEBUG
-obj-y += database.o operators.o my_malloc.o rand.o bitvec.o

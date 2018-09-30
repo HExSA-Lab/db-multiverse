@@ -6,7 +6,7 @@ cd "$(dirname "$(dirname "${0}")")"
 
 if [ -z "${1:-}" ]
 then
-	echo "Must supply subcommand"
+	echo "Must supply one or more subcommands"
 	exit 1
 fi
 
@@ -36,15 +36,13 @@ case "${1}" in
 	'console')
 		ssh -t "${controlling_host}" ipmitool ${ipmi_args} sol activate -e '@'
 		;;
-	'wait_for_linux')
+	'wait')
+		sleep 5s
 		while ! ping -w 3 -c 1 "${controlled_host_fqdn}" > /dev/null
 		do
 			echo Waiting
 			sleep 3s
 		done
-		;;
-	'select_nautilus')
-		unbuffer ./scripts/drive_grub.py
 		;;
 	'ipmi')
 		ssh -t "${controlling_host}" ipmitool ${3}
@@ -52,3 +50,9 @@ case "${1}" in
 	*)
 		echo "Do not recognize subcommand '${1}'"
 esac
+
+if [ "$#" -gt 1 ]
+then
+	shift
+	"./${0}" ${@}
+fi

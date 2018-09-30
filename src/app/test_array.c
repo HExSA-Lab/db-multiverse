@@ -16,7 +16,7 @@
 #else
 	#define REPS 10
 	#define PARAM_MIN 6
-	#define PARAM_MAX 31
+	#define PARAM_MAX 30
 #endif
 
 typedef uint8_t mval_t;

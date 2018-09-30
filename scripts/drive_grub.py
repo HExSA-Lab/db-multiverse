@@ -5,7 +5,7 @@ import os
 import time
 
 # propagate env vars for configuration
-child = pexpect.spawn('./scripts/ipmi_helper.sh console', env=os.environ, )
+child = pexpect.spawn('./scripts/ipmi_helper.sh console', env=os.environ)
 child.logfile = sys.stdout.buffer
 
 child.expect('SOL Session operational', timeout=15)
@@ -35,7 +35,7 @@ try:
         print('enter')
         time.sleep(1)
 
-    child.expect(['root-shell', 'UNHANDLED EXCEPTION'], timeout=None)
+    index = child.expect(['app_main done', 'HALTING', 'EXCEPTION', 'root-shell>'], timeout=None)
 except KeyboardInterrupt:
     print('keyboard interrupt')
 finally:
@@ -45,3 +45,5 @@ finally:
     print('quit')
 
 child.wait()
+
+sys.exit(index)
